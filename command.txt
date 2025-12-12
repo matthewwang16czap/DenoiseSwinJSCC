@@ -1,0 +1,3 @@
+python main.py --trainset DIV2K --testset kodak --distortion-metric MSE --model SwinJSCC_w/_SAandRA --channel-type awgn --C 32,64,96,128,192 --multiple-snr 1,4,7,10,13 --model_size base > ./logs/$(date +"%Y-%m-%d_%H-%M-%S").log 2>&1
+
+torchrun --nproc_per_node=4 train_ddp.py --trainset DIV2K --testset kodak --distortion-metric MSE --model SwinJSCC_w/_SAandRA --channel-type awgn --C 32,64,96,128,192 --multiple-snr 1,4,7,10,13 --model_size base --training --stage 1 --denoise --denoise-training
