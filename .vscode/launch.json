@@ -1,0 +1,43 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug SwinJSCC (torchrun, single GPU)",
+            "type": "debugpy",
+            "request": "launch",
+
+            // Instead of calling the script directly, we run the torch.distributed launcher
+            "module": "torch.distributed.run",
+
+            // torchrun arguments first, then your script and its args
+            "args": [
+                "--nproc_per_node=1",
+                "train_ddp.py",
+                "--trainset", "DIV2K",
+                "--testset", "kodak",
+                "--distortion-metric", "MSE",
+                "--model", "SwinJSCC_w/_SAandRA",
+                "--channel-type", "awgn",
+                "--C", "32,64,96,128,192",
+                "--multiple-snr", "1,4,7,10,13",
+                "--model_size", "base",
+                "--amp",
+                "--training",
+                // "--denoise-training",
+                // "--stage", "1",
+                // "--denoise",
+                
+            ],
+
+            // Ensure the process sees the GPU
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+
+            "console": "integratedTerminal",
+
+            // Optional: ensures you can use breakpoints reliably
+            "justMyCode": false
+        }
+    ]
+}

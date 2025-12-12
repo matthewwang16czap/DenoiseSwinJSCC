@@ -95,6 +95,9 @@ if __name__ == "__main__":
         help="SwinJSCC model size",
     )
     parser.add_argument("--denoise", action="store_true", help="add denoising module")
+    parser.add_argument(
+        "--amp", action="store_true", help="enable torch.cuda.amp mixed precision"
+    )
     args = parser.parse_args()
 
     ### DDP CHANGE — initialize distributed
@@ -166,6 +169,8 @@ if __name__ == "__main__":
     model_params = [{"params": net.parameters(), "lr": lr}]
     optimizer = optim.Adam(model_params, lr=lr)
 
+    scaler = torch.amp.GradScaler() if args.amp else None
+
     global_step = 0
     steps_epoch = global_step // len(train_loader)
 
@@ -197,6 +202,7 @@ if __name__ == "__main__":
                     logger,
                     args,
                     config,
+                    scaler,
                 )
             else:
                 # --- Freeze params ---
@@ -231,6 +237,7 @@ if __name__ == "__main__":
                         logger,
                         args,
                         config,
+                        scaler,
                     )
                 else:
                     global_step = train_one_epoch(
@@ -243,6 +250,7 @@ if __name__ == "__main__":
                         logger,
                         args,
                         config,
+                        scaler,
                     )
 
             # Save/check only on rank 0

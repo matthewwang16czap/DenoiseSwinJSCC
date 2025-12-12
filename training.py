@@ -6,7 +6,16 @@ import time
 
 
 def train_one_epoch(
-    epoch, global_step, net, train_loader, optimizer, CalcuSSIM, logger, args, config
+    epoch,
+    global_step,
+    net,
+    train_loader,
+    optimizer,
+    CalcuSSIM,
+    logger,
+    args,
+    config,
+    scaler,
 ):
     net.train()
     # Initialize metrics
@@ -21,26 +30,30 @@ def train_one_epoch(
         input = data[0] if args.trainset == "CIFAR10" else data
         input = input.to(config.device, non_blocking=True)
 
-        # Forward pass
-        (
-            recon_image,
-            restored_feature,
-            pred_noise,
-            noisy_feature,
-            feature,
-            mask,
-            CBR,
-            SNR,
-            real_snr,
-            chan_param,
-            mse,
-            loss_G,
-        ) = net(input)
-
-        # Backward pass
+        # Forward and backward pass
         optimizer.zero_grad()
-        loss_G.backward()
-        optimizer.step()
+        with torch.amp.autocast(device_type="cuda", enabled=(scaler is not None)):
+            (
+                recon_image,
+                restored_feature,
+                pred_noise,
+                noisy_feature,
+                feature,
+                mask,
+                CBR,
+                SNR,
+                real_snr,
+                chan_param,
+                mse,
+                loss_G,
+            ) = net(input)
+        if scaler is not None:
+            scaler.scale(loss_G).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss_G.backward()
+            optimizer.step()
 
         # Update metrics
         metrics["elapsed"].update(time.time() - start_time)
@@ -181,7 +194,16 @@ def test(net, test_loader, CalcuSSIM, logger, args, config):
 
 
 def train_one_epoch_denoiser(
-    epoch, global_step, net, train_loader, optimizer, CalcuSSIM, logger, args, config
+    epoch,
+    global_step,
+    net,
+    train_loader,
+    optimizer,
+    CalcuSSIM,
+    logger,
+    args,
+    config,
+    scaler,
 ):
     net.train()
 
@@ -213,48 +235,56 @@ def train_one_epoch_denoiser(
         input = input.to(config.device, non_blocking=True)
 
         # Forward pass
-        (
-            recon_image,
-            restored_feature,
-            pred_noise,
-            noisy_feature,
-            feature,
-            mask,
-            CBR,
-            SNR,
-            real_snr,
-            chan_param,
-            mse,
-            loss_G,
-        ) = net(input)
-        feature = feature.detach()
-        noisy_feature = noisy_feature.detach()
-        mask = mask.detach()
-        noise = noisy_feature - feature
-
-        # ---------------------- Loss Components ---------------------- #
-        # (1) Orthogonal loss: encourage pred_noise ⟂ restored_feature
-        orth_loss = masked_orthogonal_loss(
-            restored_feature, noise, pred_noise, mask, alpha=0.8
-        )
-
-        # (2) MSE between restored_feature and ground-truth feature
-        mse_loss = masked_mse_loss(restored_feature, feature, mask, noise)
-
-        # (3) Self-consistency: D(feature + pred_noise) ≈ feature
-        restored_twice, pred_noise_twice = model.feature_denoiser(
-            (feature + pred_noise).detach(),
-            mask,
-        )
-        self_loss = masked_mse_loss(restored_twice, feature, mask, pred_noise)
-
-        # ---------------------- Combine ---------------------- #
-        a_1, a_2, a_3, a_4 = config.alpha_losses
-        total_loss = a_1 * orth_loss + a_2 * mse_loss + a_3 * self_loss + a_4 * loss_G
-
         optimizer.zero_grad()
-        total_loss.backward()
-        optimizer.step()
+        with torch.amp.autocast(device_type="cuda", enabled=(scaler is not None)):
+            (
+                recon_image,
+                restored_feature,
+                pred_noise,
+                noisy_feature,
+                feature,
+                mask,
+                CBR,
+                SNR,
+                real_snr,
+                chan_param,
+                mse,
+                loss_G,
+            ) = net(input)
+            feature = feature.detach()
+            noisy_feature = noisy_feature.detach()
+            mask = mask.detach()
+            noise = noisy_feature - feature
+
+            # ---------------------- Loss Components ---------------------- #
+            # (1) Orthogonal loss: encourage pred_noise ⟂ restored_feature
+            orth_loss = masked_orthogonal_loss(
+                restored_feature, noise, pred_noise, mask, alpha=0.8
+            )
+
+            # (2) MSE between restored_feature and ground-truth feature
+            mse_loss = masked_mse_loss(restored_feature, feature, mask, noise)
+
+            # (3) Self-consistency: D(feature + pred_noise) ≈ feature
+            restored_twice, pred_noise_twice = model.feature_denoiser(
+                (feature + pred_noise).detach(),
+                mask,
+            )
+            self_loss = masked_mse_loss(restored_twice, feature, mask, pred_noise)
+
+            # ---------------------- Combine ---------------------- #
+            a_1, a_2, a_3, a_4 = config.alpha_losses
+            total_loss = (
+                a_1 * orth_loss + a_2 * mse_loss + a_3 * self_loss + a_4 * loss_G
+            )
+
+        if scaler is not None:
+            scaler.scale(total_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            total_loss.backward()
+            optimizer.step()
 
         # ---------------------- Metric computation ---------------------- #
         metrics["elapsed"].update(time.time() - start_time)
