@@ -48,6 +48,8 @@ class Config:
             self._setup_cifar10(args)
         elif args.trainset == "DIV2K":
             self._setup_div2k(args)
+        elif args.trainset == "COCO":
+            self._setup_coco(args)
         else:
             raise ValueError(f"Unsupported trainset: {args.trainset}")
 
@@ -62,7 +64,6 @@ class Config:
 
         self.encoder_kwargs = dict(
             model=args.model,
-            img_size=(self.image_dims[1], self.image_dims[2]),
             patch_size=2,
             in_chans=3,
             embed_dims=[128, 256],
@@ -78,7 +79,6 @@ class Config:
         )
         self.decoder_kwargs = dict(
             model=args.model,
-            img_size=(self.image_dims[1], self.image_dims[2]),
             embed_dims=[256, 128],
             depths=[4, 2],
             num_heads=[8, 4],
@@ -104,6 +104,72 @@ class Config:
             f"{base_path}/DIV2K_valid_HR",
         ]
         self.batch_size = 16
+        self.downsample = 4  # number of downsampling layers in encoder
+
+        # Testset options
+        testset_map = {
+            "kodak": [self.homedir + "datasets/Kodak/"],
+            "CLIC21": [self.homedir + "datasets/clic2021/test/"],
+            "ffhq": [self.homedir + "datasets/ffhq/"],
+        }
+        self.test_data_dir = testset_map.get(args.testset, [])
+
+        # Model-specific setup
+        if args.model in ["SwinJSCC_w/o_SAandRA", "SwinJSCC_w/_SA"]:
+            self.channel_number = int(args.C)
+        else:
+            self.channel_number = None
+
+        size_map = {
+            "small": dict(depths=[2, 2, 2, 2], num_heads=[4, 6, 8, 10]),
+            "base": dict(depths=[2, 2, 6, 2], num_heads=[4, 6, 8, 10]),
+            "large": dict(depths=[2, 2, 18, 2], num_heads=[4, 6, 8, 10]),
+        }
+
+        if args.model_size not in size_map:
+            raise ValueError(f"Unknown model_size: {args.model_size}")
+
+        self.encoder_kwargs = dict(
+            model=args.model,
+            patch_size=2,
+            in_chans=3,
+            embed_dims=[128, 192, 256, 320],
+            depths=size_map[args.model_size]["depths"],
+            num_heads=size_map[args.model_size]["num_heads"],
+            C=self.channel_number,
+            window_size=8,
+            mlp_ratio=4.0,
+            qkv_bias=True,
+            qk_scale=None,
+            norm_layer=nn.LayerNorm,
+            patch_norm=True,
+        )
+
+        self.decoder_kwargs = dict(
+            model=args.model,
+            embed_dims=[320, 256, 192, 128],
+            depths=size_map[args.model_size]["depths"][::-1],
+            num_heads=size_map[args.model_size]["num_heads"][::-1],
+            C=self.channel_number,
+            window_size=8,
+            mlp_ratio=4.0,
+            qkv_bias=True,
+            qk_scale=None,
+            norm_layer=nn.LayerNorm,
+            patch_norm=True,
+        )
+
+    def _setup_coco(self, args):
+        self.save_model_freq = 1
+        self.image_dims = (3, 640, 640)
+        base_path = self.homedir + "datasets/coco/"
+        self.train_data_dir = [
+            f"{base_path}/coco-2014/train/data",
+            f"{base_path}/coco-2014/validation/data",
+            f"{base_path}/coco-2017/train/data",
+            f"{base_path}/coco-2017/validation/data",
+        ]
+        self.batch_size = 8
         self.downsample = 4
 
         # Testset options
@@ -131,7 +197,6 @@ class Config:
 
         self.encoder_kwargs = dict(
             model=args.model,
-            img_size=(self.image_dims[1], self.image_dims[2]),
             patch_size=2,
             in_chans=3,
             embed_dims=[128, 192, 256, 320],
@@ -148,7 +213,6 @@ class Config:
 
         self.decoder_kwargs = dict(
             model=args.model,
-            img_size=(self.image_dims[1], self.image_dims[2]),
             embed_dims=[320, 256, 192, 128],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],

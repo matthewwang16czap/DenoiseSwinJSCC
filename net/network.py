@@ -57,15 +57,7 @@ class SwinJSCC(nn.Module):
         return noisy_feature
 
     def forward(self, input_image, given_SNR=None, given_rate=None):
-        B, _, H, W = input_image.shape
-
-        if H != self.H or W != self.W:
-            self.encoder.update_resolution(H, W)
-            self.decoder.update_resolution(
-                H // (2**self.downsample), W // (2**self.downsample)
-            )
-            self.H = H
-            self.W = W
+        B, C, H, W = input_image.shape
 
         if given_SNR is None:
             SNR = choice(self.multiple_snr)
@@ -80,7 +72,9 @@ class SwinJSCC(nn.Module):
             channel_number = given_rate
 
         if self.model == "SwinJSCC_w/o_SAandRA" or self.model == "SwinJSCC_w/_SA":
-            feature = self.encoder(input_image, chan_param, channel_number, self.model)
+            feature, mask, feature_H, feature_W = self.encoder(
+                input_image, chan_param, channel_number, self.model
+            )
             CBR = feature.numel() / 2 / input_image.numel()
             if self.pass_channel:
                 noisy_feature = self.feature_pass_channel(feature, chan_param)
@@ -88,7 +82,7 @@ class SwinJSCC(nn.Module):
                 noisy_feature = feature
 
         elif self.model == "SwinJSCC_w/_RA" or self.model == "SwinJSCC_w/_SAandRA":
-            feature, mask = self.encoder(
+            feature, mask, feature_H, feature_W = self.encoder(
                 input_image, chan_param, channel_number, self.model
             )
             CBR = channel_number / (2 * 3 * 2 ** (self.downsample * 2))
@@ -116,7 +110,9 @@ class SwinJSCC(nn.Module):
             pred_noise = torch.zeros_like(noisy_feature)
             restored_feature = noisy_feature
 
-        recon_image = self.decoder(restored_feature, chan_param, self.model)
+        recon_image = self.decoder(
+            restored_feature, chan_param, self.model, feature_H, feature_W
+        )
         mse = self.squared_difference(
             input_image * 255.0, recon_image.clamp(0.0, 1.0) * 255.0
         )

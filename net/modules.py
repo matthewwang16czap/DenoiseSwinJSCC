@@ -189,22 +189,6 @@ class WindowAttention(nn.Module):
         x = self.proj_drop(x)
         return x
 
-    def extra_repr(self) -> str:
-        return f"dim={self.dim}, window_size={self.window_size}, num_heads={self.num_heads}"
-
-    def flops(self, N):
-        # calculate flops for 1 window with token length of N
-        flops = 0
-        # qkv = self.qkv(x)
-        flops += N * self.dim * 3 * self.dim
-        # attn = (q @ k.transpose(-2, -1))
-        flops += self.num_heads * N * (self.dim // self.num_heads) * N
-        #  x = (attn @ v)
-        flops += self.num_heads * N * N * (self.dim // self.num_heads)
-        # x = self.proj(x)
-        flops += N * self.dim * self.dim
-        return flops
-
 
 class PatchMerging(nn.Module):
     r"""Patch Merging Layer.
@@ -215,205 +199,111 @@ class PatchMerging(nn.Module):
 
     """
 
-    def __init__(self, input_resolution, dim, out_dim=None, norm_layer=nn.LayerNorm):
+    def __init__(self, dim, out_dim=None, norm_layer=nn.LayerNorm):
         super().__init__()
-        self.input_resolution = input_resolution
         if out_dim is None:
             out_dim = dim
         self.dim = dim
         self.reduction = nn.Linear(4 * dim, out_dim, bias=False)
         self.norm = norm_layer(4 * dim)
-        # self.proj = nn.Conv2d(dim, out_dim, kernel_size=2, stride=2)
-        # self.norm = nn.LayerNorm(out_dim)
 
-    def forward(self, x):
+    def forward(self, x, H, W):
         """
         x: B, H*W, C
         """
-        H, W = self.input_resolution
         B, L, C = x.shape
-        # print(x.shape)
-        # print(self.input_resolution)
         assert L == H * W, "input feature has wrong size"
         assert H % 2 == 0 and W % 2 == 0, f"x size ({H}*{W}) are not even."
+
         x = x.view(B, H, W, C)
-        x0 = x[:, 0::2, 0::2, :]  # B H/2 W/2 C
-        x1 = x[:, 1::2, 0::2, :]  # B H/2 W/2 C
-        x2 = x[:, 0::2, 1::2, :]  # B H/2 W/2 C
-        x3 = x[:, 1::2, 1::2, :]  # B H/2 W/2 C
-        x = torch.cat([x0, x1, x2, x3], -1)  # B H/2 W/2 4*C
-        x = x.view(B, H * W // 4, 4 * C)  # B H/2*W/2 4*C
+
+        x0 = x[:, 0::2, 0::2, :]
+        x1 = x[:, 1::2, 0::2, :]
+        x2 = x[:, 0::2, 1::2, :]
+        x3 = x[:, 1::2, 1::2, :]
+
+        x = torch.cat([x0, x1, x2, x3], dim=-1)
+        x = x.view(B, -1, 4 * C)
+
         x = self.norm(x)
         x = self.reduction(x)
 
-        # x = x.view(B, H, W, C).permute(0, 3, 1, 2)
-        # x = self.proj(x).flatten(2).transpose(1, 2)
-        # x = self.norm(x)
-        return x
-
-    def extra_repr(self) -> str:
-        return f"input_resolution={self.input_resolution}, dim={self.dim}"
-
-    def flops(self):
-        H, W = self.input_resolution
-        flops = H * W * self.dim
-        flops += (H // 2) * (W // 2) * 4 * self.dim * 2 * self.dim
-        return flops
-
-
-class PatchMerging4x(nn.Module):
-    def __init__(self, input_resolution, dim, norm_layer=nn.LayerNorm, use_conv=False):
-        super().__init__()
-        H, W = input_resolution
-        self.patch_merging1 = PatchMerging(
-            (H, W), dim, norm_layer=nn.LayerNorm, use_conv=use_conv
-        )
-        self.patch_merging2 = PatchMerging(
-            (H // 2, W // 2), dim, norm_layer=nn.LayerNorm, use_conv=use_conv
-        )
-
-    def forward(self, x, H=None, W=None):
-        if H is None:
-            H, W = self.input_resolution
-        x = self.patch_merging1(x, H, W)
-        x = self.patch_merging2(x, H // 2, W // 2)
-        return x
+        return x, H // 2, W // 2
 
 
 class PatchReverseMerging(nn.Module):
-    r"""Patch Merging Layer.
-    Args:
-        input_resolution (tuple[int]): Resolution of input feature.
-        dim (int): Number of input channels.
-        norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
+    r"""Patch Reverse Merging (Upsampling) Layer.
 
+    Args:
+        dim (int): Number of input channels.
+        out_dim (int): Number of output channels after upsampling.
+        norm_layer (nn.Module, optional): Normalization layer. Default: nn.LayerNorm
     """
 
-    def __init__(self, input_resolution, dim, out_dim, norm_layer=nn.LayerNorm):
+    def __init__(self, dim, out_dim, norm_layer=nn.LayerNorm):
         super().__init__()
-        self.input_resolution = input_resolution
         self.dim = dim
         self.out_dim = out_dim
+        # Expand channels for PixelShuffle
         self.increment = nn.Linear(dim, out_dim * 4, bias=False)
         self.norm = norm_layer(dim)
-        # self.proj = nn.ConvTranspose2d(dim // 4, 3, 3, stride=1, padding=1)
-        # self.norm = nn.LayerNorm(dim)
 
-    def forward(self, x):
+    def forward(self, x, H, W):
         """
-        x: B, H*W, C
+        Args:
+            x: (B, H*W, C)
+            H, W: spatial resolution of x before upsampling
+        Returns:
+            x: (B, 4*H*W, out_dim)  -> spatially (2H, 2W)
         """
-        H, W = self.input_resolution
         B, L, C = x.shape
-        assert L == H * W, "input feature has wrong size"
-        assert H % 2 == 0 and W % 2 == 0, f"x size ({H}*{W}) are not even."
+        assert L == H * W, "Input feature has wrong size"
+
         x = self.norm(x)
-        x = self.increment(x)
-        x = x.view(B, H, W, -1).permute(0, 3, 1, 2)
-        x = nn.PixelShuffle(2)(x)
-        # x = self.proj(x).flatten(2).transpose(1, 2)
-        # x = self.norm(x)
-        # print(x.shape)
-        x = x.flatten(2).permute(0, 2, 1)
-        return x
-
-    def extra_repr(self) -> str:
-        return f"input_resolution={self.input_resolution}, dim={self.dim}"
-
-    def flops(self):
-        H, W = self.input_resolution
-        flops = H * 2 * W * 2 * self.dim // 4
-        flops += (H * 2) * (W * 2) * self.dim // 4 * self.dim
-        return flops
-
-
-class PatchReverseMerging4x(nn.Module):
-    def __init__(self, input_resolution, dim, norm_layer=nn.LayerNorm, use_conv=False):
-        super().__init__()
-        self.use_conv = use_conv
-        self.input_resolution = input_resolution
-        self.dim = dim
-        H, W = input_resolution
-        self.patch_reverse_merging1 = PatchReverseMerging(
-            (H, W), dim, norm_layer=nn.LayerNorm, use_conv=use_conv
-        )
-        self.patch_reverse_merging2 = PatchReverseMerging(
-            (H * 2, W * 2), dim, norm_layer=nn.LayerNorm, use_conv=use_conv
-        )
-
-    def forward(self, x, H=None, W=None):
-        if H is None:
-            H, W = self.input_resolution
-        x = self.patch_reverse_merging1(x, H, W)
-        x = self.patch_reverse_merging2(x, H * 2, W * 2)
-        return x
-
-    def extra_repr(self) -> str:
-        return f"input_resolution={self.input_resolution}, dim={self.dim}"
-
-    def flops(self):
-        H, W = self.input_resolution
-        flops = H * 2 * W * 2 * self.dim // 4
-        flops += (H * 2) * (W * 2) * self.dim // 4 * self.dim
-        return flops
+        x = self.increment(x)  # (B, H*W, 4*out_dim)
+        x = x.view(B, H, W, -1)
+        x = x.permute(0, 3, 1, 2)  # (B, 4*out_dim, H, W)
+        x = nn.PixelShuffle(2)(x)  # (B, out_dim, 2H, 2W)
+        x = x.flatten(2).permute(0, 2, 1)  # (B, 4*H*W, out_dim)
+        return x, H * 2, W * 2
 
 
 class PatchEmbed(nn.Module):
-    def __init__(
-        self, img_size=224, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None
-    ):
-        super().__init__()
-        img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
-        patches_resolution = [
-            img_size[0] // patch_size[0],
-            img_size[1] // patch_size[1],
-        ]
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.patches_resolution = patches_resolution
-        self.num_patches = patches_resolution[0] * patches_resolution[1]
+    """Image to Patch Embedding
 
+    Args:
+        patch_size (int or tuple): Patch spatial size (kernel + stride) at input.
+        in_chans (int): Number of input channels.
+        embed_dim (int): Output embedding dimension.
+        norm_layer (nn.Module, optional): Normalization layer. Default: None.
+    """
+
+    def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+        super().__init__()
         self.in_chans = in_chans
         self.embed_dim = embed_dim
-
         self.proj = nn.Conv2d(
             in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
         )
-        if norm_layer is not None:
-            self.norm = norm_layer(embed_dim)
-        else:
-            self.norm = None
+        self.norm = norm_layer(embed_dim) if norm_layer is not None else None
 
     def forward(self, x):
-        B, C, H, W = x.shape
-        # FIXME look at relaxing size constraints
-        # assert H == self.img_size[0] and W == self.img_size[1], \
-        #     f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
-        x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
+        """
+        Args:
+            x: (B, C, H, W)
+        Returns:
+            x: (B, num_patches, embed_dim)
+        """
+        x = self.proj(x).flatten(2).transpose(1, 2)  # B, num_patches, embed_dim
         if self.norm is not None:
             x = self.norm(x)
         return x
-
-    def flops(self):
-        Ho, Wo = self.patches_resolution
-        flops = (
-            Ho
-            * Wo
-            * self.embed_dim
-            * self.in_chans
-            * (self.patch_size[0] * self.patch_size[1])
-        )
-        if self.norm is not None:
-            flops += Ho * Wo * self.embed_dim
-        return flops
 
 
 class SwinTransformerBlock(nn.Module):
     def __init__(
         self,
         dim,
-        input_resolution,
         num_heads,
         window_size=7,
         shift_size=0,
@@ -425,22 +315,17 @@ class SwinTransformerBlock(nn.Module):
     ):
         super().__init__()
         self.dim = dim
-        self.input_resolution = input_resolution
         self.num_heads = num_heads
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
 
-        if min(self.input_resolution) <= self.window_size:
-            self.shift_size = 0
-            self.window_size = min(self.input_resolution)
-
-        assert 0 <= self.shift_size < self.window_size
+        assert shift_size < window_size
 
         self.norm1 = norm_layer(dim)
         self.attn = WindowAttention(
             dim,
-            window_size=to_2tuple(self.window_size),
+            window_size=to_2tuple(window_size),
             num_heads=num_heads,
             qkv_bias=qkv_bias,
             qk_scale=qk_scale,
@@ -449,97 +334,85 @@ class SwinTransformerBlock(nn.Module):
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
-            in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer
+            in_features=dim,
+            hidden_features=mlp_hidden_dim,
+            act_layer=act_layer,
         )
 
-    def compute_attn_mask(self, H, W, device):
-        if self.shift_size == 0:
+    def compute_attn_mask(self, H, W, window_size, shift_size, device):
+        if shift_size == 0:
             return None
+
         img_mask = torch.zeros((1, H, W, 1), device=device)
+
         h_slices = (
-            slice(0, -self.window_size),
-            slice(-self.window_size, -self.shift_size),
-            slice(-self.shift_size, None),
+            slice(0, -window_size),
+            slice(-window_size, -shift_size),
+            slice(-shift_size, None),
         )
         w_slices = (
-            slice(0, -self.window_size),
-            slice(-self.window_size, -self.shift_size),
-            slice(-self.shift_size, None),
+            slice(0, -window_size),
+            slice(-window_size, -shift_size),
+            slice(-shift_size, None),
         )
+
         cnt = 0
         for h in h_slices:
             for w in w_slices:
                 img_mask[:, h, w, :] = cnt
                 cnt += 1
-        mask_windows = window_partition(img_mask, self.window_size).view(
-            -1, self.window_size * self.window_size
-        )
+
+        mask_windows = window_partition(img_mask, window_size)
+        mask_windows = mask_windows.view(-1, window_size * window_size)
+
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
-            attn_mask == 0, float(0.0)
-        )
+        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0))
+        attn_mask = attn_mask.masked_fill(attn_mask == 0, float(0.0))
+
         return attn_mask
 
-    def forward(self, x):
-        H, W = self.input_resolution
+    def forward(self, x, H, W):
+        """
+        Args:
+            x: (B, H*W, C)
+            H, W: spatial resolution of input feature
+        """
         B, L, C = x.shape
-        assert L == H * W, "input feature has wrong size"
+        assert L == H * W, "Input feature has wrong size"
+
+        # adapt window & shift at runtime
+        window_size = min(self.window_size, H, W)
+        shift_size = self.shift_size if window_size > self.shift_size else 0
 
         shortcut = x
         x = self.norm1(x).view(B, H, W, C)
 
         # cyclic shift
-        if self.shift_size > 0:
-            shifted_x = torch.roll(
-                x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2)
-            )
-        else:
-            shifted_x = x
+        if shift_size > 0:
+            x = torch.roll(x, shifts=(-shift_size, -shift_size), dims=(1, 2))
 
-        # partition windows
-        x_windows = window_partition(shifted_x, self.window_size)
-        x_windows = x_windows.view(
-            -1, self.window_size * self.window_size, C
-        )  # nW*B, window_size*window_size, C
+        # window partition
+        x_windows = window_partition(x, window_size)
+        x_windows = x_windows.view(-1, window_size * window_size, C)
 
-        attn_mask = self.compute_attn_mask(H, W, x.device)
+        attn_mask = self.compute_attn_mask(H, W, window_size, shift_size, x.device)
+
         attn_windows = self.attn(x_windows, add_token=False, mask=attn_mask)
 
-        attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
-        shifted_x = window_reverse(attn_windows, self.window_size, H, W)
+        # merge windows
+        attn_windows = attn_windows.view(-1, window_size, window_size, C)
+        x = window_reverse(attn_windows, window_size, H, W)
 
         # reverse cyclic shift
-        if self.shift_size > 0:
-            x = torch.roll(
-                shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2)
-            )
-        else:
-            x = shifted_x
+        if shift_size > 0:
+            x = torch.roll(x, shifts=(shift_size, shift_size), dims=(1, 2))
 
         x = x.view(B, H * W, C)
+
+        # FFN
         x = shortcut + x
         x = x + self.mlp(self.norm2(x))
         return x
-
-    def extra_repr(self) -> str:
-        return (
-            f"dim={self.dim}, input_resolution={self.input_resolution}, num_heads={self.num_heads}, "
-            f"window_size={self.window_size}, shift_size={self.shift_size}, mlp_ratio={self.mlp_ratio}"
-        )
-
-    def flops(self):
-        flops = 0
-        H, W = self.input_resolution
-        # norm1
-        flops += self.dim * H * W
-        # W-MSA/SW-MSA
-        nW = H * W / self.window_size / self.window_size
-        flops += nW * self.attn.flops(self.window_size * self.window_size)
-        # mlp
-        flops += 2 * H * W * self.dim * self.dim * self.mlp_ratio
-        # norm2
-        flops += self.dim * H * W
-        return flops
 
 
 class AdaptiveModulator(nn.Module):
@@ -555,6 +428,7 @@ class AdaptiveModulator(nn.Module):
         )
 
     def forward(self, snr):
+        snr = snr.to(dtype=self.fc[0].weight.dtype)
         return self.fc(snr)
 
 
