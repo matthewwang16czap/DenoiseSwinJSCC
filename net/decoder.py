@@ -132,6 +132,8 @@ class SwinJSCC_Decoder(nn.Module):
 
             self.sigmoid = nn.Sigmoid()
 
+        self.tanh = nn.Tanh()
+
         self.apply(self._init_weights)
 
     # -------------------------------------------------
@@ -188,6 +190,10 @@ class SwinJSCC_Decoder(nn.Module):
 
         # Tokens → image
         x = x.view(B, H, W, 3).permute(0, 3, 1, 2).contiguous()
+
+        # Nornalize to [0,1]
+        x = self.tanh(x)
+        x = 0.5 * (x + 1.0)
         return x
 
     # -------------------------------------------------

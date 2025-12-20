@@ -32,7 +32,7 @@ class Config:
         # --- Training details ---
         self.normalize = False
         self.learning_rate = 1e-4
-        self.alpha_losses = [10, 10, 10, 1 / 255.0]
+        self.alpha_losses = [10, 10, 10, 1]
         self.tot_epoch = 10_000_000
 
         # --- Model toggles ---
@@ -44,52 +44,12 @@ class Config:
 
     def _setup_dataset(self, args):
         """Configure dataset and model-specific parameters."""
-        if args.trainset == "CIFAR10":
-            self._setup_cifar10(args)
-        elif args.trainset == "DIV2K":
+        if args.trainset == "DIV2K":
             self._setup_div2k(args)
         elif args.trainset == "COCO":
             self._setup_coco(args)
         else:
             raise ValueError(f"Unsupported trainset: {args.trainset}")
-
-    def _setup_cifar10(self, args):
-        self.save_model_freq = 5
-        self.image_dims = (3, 32, 32)
-        self.train_data_dir = self.homedir + "datasets/CIFAR10/"
-        self.test_data_dir = self.homedir + "datasets/CIFAR10/"
-        self.batch_size = 128
-        self.downsample = 2
-        self.channel_number = int(args.C)
-
-        self.encoder_kwargs = dict(
-            model=args.model,
-            patch_size=2,
-            in_chans=3,
-            embed_dims=[128, 256],
-            depths=[2, 4],
-            num_heads=[4, 8],
-            C=self.channel_number,
-            window_size=2,
-            mlp_ratio=4.0,
-            qkv_bias=True,
-            qk_scale=None,
-            norm_layer=nn.LayerNorm,
-            patch_norm=True,
-        )
-        self.decoder_kwargs = dict(
-            model=args.model,
-            embed_dims=[256, 128],
-            depths=[4, 2],
-            num_heads=[8, 4],
-            C=self.channel_number,
-            window_size=2,
-            mlp_ratio=4.0,
-            qkv_bias=True,
-            qk_scale=None,
-            norm_layer=nn.LayerNorm,
-            patch_norm=True,
-        )
 
     def _setup_div2k(self, args):
         self.save_model_freq = 100
@@ -169,7 +129,7 @@ class Config:
             f"{base_path}/coco-2017/train/data",
             f"{base_path}/coco-2017/validation/data",
         ]
-        self.batch_size = 8
+        self.batch_size = 4
         self.downsample = 4
 
         # Testset options
@@ -197,9 +157,9 @@ class Config:
 
         self.encoder_kwargs = dict(
             model=args.model,
-            patch_size=2,
+            patch_size=4,
             in_chans=3,
-            embed_dims=[128, 192, 256, 320],
+            embed_dims=[96, 192, 384, 768],
             depths=size_map[args.model_size]["depths"],
             num_heads=size_map[args.model_size]["num_heads"],
             C=self.channel_number,
@@ -213,7 +173,7 @@ class Config:
 
         self.decoder_kwargs = dict(
             model=args.model,
-            embed_dims=[320, 256, 192, 128],
+            embed_dims=[768, 384, 192, 96],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],
             C=self.channel_number,

@@ -6,9 +6,10 @@ import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from net.network import SwinJSCC
-from data.datasets_rev import get_loader
+from data.datasets import get_loader
 from utils import *
-from loss.distortion import *
+from loss.image_losses import *
+from loss.feature_losses import *
 from config import Config
 from training import *
 
@@ -47,7 +48,7 @@ if __name__ == "__main__":
         "--trainset",
         type=str,
         default="DIV2K",
-        choices=["CIFAR10", "DIV2K"],
+        choices=["COCO", "DIV2K"],
         help="train dataset name",
     )
     parser.add_argument(
@@ -115,13 +116,6 @@ if __name__ == "__main__":
     config = Config(args)
     config.device = ddp_env["device"]
     config.device_id = ddp_env["device_id"]
-
-    if args.trainset == "CIFAR10":
-        CalcuSSIM = MS_SSIM(window_size=3, data_range=1.0, levels=4, channel=3).to(
-            config.device
-        )
-    else:
-        CalcuSSIM = MS_SSIM(data_range=1.0, levels=4, channel=3).to(config.device)
 
     base_seed = 42 + ddp_env["rank"]  # Different seed per GPU
     seed_torch(base_seed)
@@ -198,7 +192,6 @@ if __name__ == "__main__":
                     net,
                     train_loader,
                     optimizer,
-                    CalcuSSIM,
                     logger,
                     args,
                     config,
@@ -233,7 +226,6 @@ if __name__ == "__main__":
                         net,
                         train_loader,
                         optimizer,
-                        CalcuSSIM,
                         logger,
                         args,
                         config,
@@ -246,7 +238,6 @@ if __name__ == "__main__":
                         net,
                         train_loader,
                         optimizer,
-                        CalcuSSIM,
                         logger,
                         args,
                         config,
@@ -262,7 +253,6 @@ if __name__ == "__main__":
                 test(
                     net.module if isinstance(net, DDP) else net,
                     test_loader,
-                    CalcuSSIM,
                     logger,
                     args,
                     config,
@@ -271,7 +261,6 @@ if __name__ == "__main__":
         test(
             net.module if isinstance(net, DDP) else net,
             test_loader,
-            CalcuSSIM,
             logger,
             args,
             config,
