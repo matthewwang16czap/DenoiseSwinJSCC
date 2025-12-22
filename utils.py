@@ -70,6 +70,16 @@ def logger_configuration(config, save_log=False, test_mode=False):
     return config.logger
 
 
+def get_path(*paths):
+    # Join all path components
+    full_path = os.path.join(*paths)
+    # Extract directory path
+    dir_path = os.path.dirname(full_path)
+    # Create directory if it doesn't exist
+    os.makedirs(dir_path, exist_ok=True)
+    return full_path
+
+
 def makedirs(directory):
     os.makedirs(os.path.dirname(directory), exist_ok=True)
 
@@ -103,10 +113,10 @@ def mem_report(tag):
 
 def seed_torch(seed=1029):
     random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)  
+    os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  
+    torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True

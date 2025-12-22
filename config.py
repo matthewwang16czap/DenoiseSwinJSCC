@@ -54,7 +54,7 @@ class Config:
     def _setup_div2k(self, args):
         self.save_model_freq = 100
         self.image_dims = (3, 256, 256)
-        base_path = self.homedir + "datasets/DIV2K/"
+        base_path = self.homedir + "datasets/DIV2K"
         self.train_data_dir = [
             f"{base_path}/clic2020/**",
             f"{base_path}/clic2021/train",
@@ -107,6 +107,8 @@ class Config:
 
         self.decoder_kwargs = dict(
             model=args.model,
+            patch_size=2,
+            out_chans=3,
             embed_dims=[320, 256, 192, 128],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],
@@ -121,8 +123,8 @@ class Config:
 
     def _setup_coco(self, args):
         self.save_model_freq = 1
-        self.image_dims = (3, 640, 640)
-        base_path = self.homedir + "datasets/coco/"
+        self.image_dims = (3, 512, 512)
+        base_path = self.homedir + "datasets"
         self.train_data_dir = [
             f"{base_path}/coco-2014/train/data",
             f"{base_path}/coco-2014/validation/data",
@@ -147,9 +149,7 @@ class Config:
             self.channel_number = None
 
         size_map = {
-            "small": dict(depths=[2, 2, 2, 2], num_heads=[4, 6, 8, 10]),
-            "base": dict(depths=[2, 2, 6, 2], num_heads=[4, 6, 8, 10]),
-            "large": dict(depths=[2, 2, 18, 2], num_heads=[4, 6, 8, 10]),
+            "base": dict(depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24]),
         }
 
         if args.model_size not in size_map:
@@ -173,6 +173,8 @@ class Config:
 
         self.decoder_kwargs = dict(
             model=args.model,
+            patch_size=4,
+            out_chans=3,
             embed_dims=[768, 384, 192, 96],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],

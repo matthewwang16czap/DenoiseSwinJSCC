@@ -61,32 +61,74 @@ class ImageDataset(Dataset):
         return img, valid
 
 
+class ImageFolderWithResize(Dataset):
+    def __init__(self, dirs, image_dims, train):
+        """
+        dirs: a list of directories
+        image_dims: (C,H,W)
+        train: True = Random crop, False = Center crop or resize
+        """
+        self.paths = []
+        for d in dirs:
+            self.paths += glob(os.path.join(d, "*.png"))
+            self.paths += glob(os.path.join(d, "*.jpg"))
+        self.paths.sort()
+
+        _, H, W = image_dims
+
+        if train:
+            self.transform = transforms.Compose(
+                [
+                    transforms.RandomResizedCrop((H, W), scale=(0.7, 1.0)),
+                    transforms.ToTensor(),
+                ]
+            )
+        else:
+            self.transform = transforms.Compose(
+                [
+                    transforms.Resize(min(H, W)),  # preserves aspect ratio
+                    transforms.CenterCrop((H, W)),  # exact final size
+                    transforms.ToTensor(),
+                ]
+            )
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.paths[idx]).convert("RGB")
+        img = self.transform(img)
+        return img, torch.ones_like(img).float()
+
+
 def worker_init_fn_seed(worker_id):
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
 
-def get_dataset(name, data_dirs, config):
+def get_dataset(name, data_dirs, config, train):
     """
     name: "DIV2K", "KODAK", or folder dataset name
     data_dirs: list of folders
     config: config object containing image_dims
     """
     name = name.upper()
-    return ImageDataset(dirs=data_dirs, image_dims=config.image_dims)
+    return ImageFolderWithResize(
+        dirs=data_dirs, image_dims=config.image_dims, train=train
+    )
 
 
 def get_loader(args, config, rank=None, world_size=None):
 
     # ------------------------ Train Dataset ------------------------ #
     train_dataset = get_dataset(
-        name=args.trainset, data_dirs=config.train_data_dir, config=config
+        name=args.trainset, data_dirs=config.train_data_dir, config=config, train=True
     )
 
     # ------------------------ Test Dataset ------------------------- #
     test_dataset = get_dataset(
-        name=args.testset, data_dirs=config.test_data_dir, config=config
+        name=args.testset, data_dirs=config.test_data_dir, config=config, train=False
     )
 
     # ------------------------ Sampler (DDP) ------------------------ #

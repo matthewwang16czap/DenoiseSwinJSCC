@@ -102,17 +102,17 @@ class SwinJSCC(nn.Module):
             restored_feature = noisy_feature
 
         recon_image = self.decoder(
-            restored_feature, chan_param, self.model, feature_H, feature_W
+            restored_feature, chan_param, self.model, feature_H, feature_W, valid
         )
 
         # --- Compute metrics ---
-        mse = self.mse(input_image, recon_image, valid).mean().detach()
-        psnr = self.psnr(input_image, recon_image, valid).mean().detach()
-        ssim = self.ssim(input_image, recon_image, valid).mean().detach()
-        msssim = self.msssim(input_image, recon_image, valid).mean().detach()
+        mse = self.mse(input_image, recon_image).mean().detach()
+        psnr = self.psnr(input_image, recon_image).mean().detach()
+        ssim = self.ssim(input_image, recon_image).mean().detach()
+        msssim = self.msssim(input_image, recon_image).mean().detach()
 
         # --- Compute image loss ---
-        img_loss = self.distortion_loss(input_image, recon_image, valid).mean()
+        img_loss = self.distortion_loss(input_image, recon_image).mean()
 
         return (
             recon_image,

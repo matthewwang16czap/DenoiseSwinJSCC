@@ -22,7 +22,7 @@
                 "--multiple-snr", "1,4,7,10,13",
                 "--model_size", "base",
                 "--amp",
-                "--training",
+                // "--training",
                 // "--denoise-training",
                 // "--stage", "1",
                 // "--denoise",

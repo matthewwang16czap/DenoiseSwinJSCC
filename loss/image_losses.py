@@ -4,17 +4,6 @@ import torch.nn.functional as F
 
 
 @torch.jit.script
-def masked_mean(x, mask, eps: float = 1e-8):
-    if mask is None:
-        return x.mean(dim=(1, 2, 3))
-    if mask.dim() == 3:
-        mask = mask.unsqueeze(1)
-    num = (x * mask).sum(dim=(1, 2, 3))
-    den = mask.sum(dim=(1, 2, 3)).clamp_min(eps)
-    return num / den
-
-
-@torch.jit.script
 def create_window(window_size: int, sigma: float, channel: int):
     """
     Create 1-D gauss kernel
@@ -43,8 +32,6 @@ def _gaussian_filter(x, window_1d, use_padding: bool):
     :return: blured tensors
     """
     C = x.shape[1]
-    # conssistent dtype
-    window_1d = window_1d.to(x.dtype)
     padding = 0
     if use_padding:
         window_size = window_1d.shape[3]
@@ -57,102 +44,139 @@ def _gaussian_filter(x, window_1d, use_padding: bool):
 
 
 @torch.jit.script
-def ssim(
-    X: torch.Tensor,
-    Y: torch.Tensor,
-    window: torch.Tensor,
-    data_range: float,
-    use_padding: bool = False,
-    mask: Optional[torch.Tensor] = None,
-    eps: float = 1e-8,
-):
-    K1, K2 = 0.01, 0.03
+def ssim(X, Y, window, data_range: float, use_padding: bool = False):
+    """
+    Calculate ssim index for X and Y
+    :param X: images
+    :param Y: images
+    :param window: 1-D gauss kernel
+    :param data_range: value range of input images. (usually 1.0 or 255)
+    :param use_padding: padding image before conv
+    :return:
+    """
+
+    K1 = 0.01
+    K2 = 0.03
+    compensation = 1.0
+
     C1 = (K1 * data_range) ** 2
     C2 = (K2 * data_range) ** 2
 
-    mu_x = _gaussian_filter(X, window, use_padding)
-    mu_y = _gaussian_filter(Y, window, use_padding)
+    mu1 = _gaussian_filter(X, window, use_padding)
+    mu2 = _gaussian_filter(Y, window, use_padding)
+    sigma1_sq = _gaussian_filter(X * X, window, use_padding)
+    sigma2_sq = _gaussian_filter(Y * Y, window, use_padding)
+    sigma12 = _gaussian_filter(X * Y, window, use_padding)
 
-    sigma_x = _gaussian_filter(X * X, window, use_padding) - mu_x**2
-    sigma_y = _gaussian_filter(Y * Y, window, use_padding) - mu_y**2
-    sigma_xy = _gaussian_filter(X * Y, window, use_padding) - mu_x * mu_y
+    mu1_sq = mu1.pow(2)
+    mu2_sq = mu2.pow(2)
+    mu1_mu2 = mu1 * mu2
 
-    cs = (2 * sigma_xy + C2) / (sigma_x + sigma_y + C2 + eps)
-    cs = F.relu(cs)
+    sigma1_sq = compensation * (sigma1_sq - mu1_sq)
+    sigma2_sq = compensation * (sigma2_sq - mu2_sq)
+    sigma12 = compensation * (sigma12 - mu1_mu2)
 
-    ssim_map = ((2 * mu_x * mu_y + C1) / (mu_x**2 + mu_y**2 + C1 + eps)) * cs
+    cs_map = (2 * sigma12 + C2) / (sigma1_sq + sigma2_sq + C2)
+    # Fixed the issue that the negative value of cs_map caused ms_ssim to output Nan.
+    cs_map = F.relu(cs_map)
+    ssim_map = ((2 * mu1_mu2 + C1) / (mu1_sq + mu2_sq + C1)) * cs_map
 
-    if mask is not None:
-        if mask.dim() == 3:
-            mask = mask.unsqueeze(1)
-        m = _gaussian_filter(mask.float(), window[:1], use_padding)
-        ssim_val = masked_mean(ssim_map, m)
-        cs_val = masked_mean(cs, m)
-    else:
-        ssim_val = ssim_map.mean(dim=(1, 2, 3))
-        cs_val = cs.mean(dim=(1, 2, 3))
+    ssim_val = ssim_map.mean(dim=(1, 2, 3))  # reduce along CHW
+    cs = cs_map.mean(dim=(1, 2, 3))
 
-    return ssim_val, cs_val
+    return ssim_val, cs
 
 
 @torch.jit.script
 def ms_ssim(
-    X: torch.Tensor,
-    Y: torch.Tensor,
-    window: torch.Tensor,
+    X,
+    Y,
+    window,
     data_range: float,
-    weights: torch.Tensor,
+    weights,
     use_padding: bool = False,
-    mask: Optional[torch.Tensor] = None,
     eps: float = 1e-8,
 ):
-    weights = weights / weights.sum()
+    """
+    interface of ms-ssim
+    :param X: a batch of images, (N,C,H,W)
+    :param Y: a batch of images, (N,C,H,W)
+    :param window: 1-D gauss kernel
+    :param data_range: value range of input images. (usually 1.0 or 255)
+    :param weights: weights for different levels
+    :param use_padding: padding image before conv
+    :param eps: use for avoid grad nan.
+    :return:
+    """
+    weights = weights[:, None]
+
+    levels = weights.shape[0]
     vals = []
+    for i in range(levels):
+        ss, cs = ssim(
+            X, Y, window=window, data_range=data_range, use_padding=use_padding
+        )
 
-    for i in range(weights.numel()):
-        ssim_val, cs = ssim(X, Y, window, data_range, use_padding, mask, eps)
-        vals.append(cs if i < weights.numel() - 1 else ssim_val)
+        if i < levels - 1:
+            vals.append(cs)
+            X = F.avg_pool2d(X, kernel_size=2, stride=2, ceil_mode=True)
+            Y = F.avg_pool2d(Y, kernel_size=2, stride=2, ceil_mode=True)
+        else:
+            vals.append(ss)
 
-        if i < weights.numel() - 1:
-            X = F.avg_pool2d(X, 2, ceil_mode=True)
-            Y = F.avg_pool2d(Y, 2, ceil_mode=True)
-            if mask is not None:
-                mask = F.avg_pool2d(mask, 2, ceil_mode=True)
+    vals = torch.stack(vals, dim=0)
+    # Use for fix a issue. When c = a ** b and a is 0, c.backward() will cause the a.grad become inf.
+    vals = vals.clamp_min(eps)
+    # The origin ms-ssim op.
+    ms_ssim_val = torch.prod(
+        vals[:-1] ** weights[:-1] * vals[-1:] ** weights[-1:], dim=0
+    )
+    # The new ms-ssim op. But I don't know which is best.
+    # ms_ssim_val = torch.prod(vals ** weights, dim=0)
+    # In this file's image training demo. I feel the old ms-ssim more better. So I keep use old ms-ssim op.
+    return ms_ssim_val
 
-    vals = torch.stack(vals).clamp_min(eps)
-    return torch.prod(vals ** weights[:, None], dim=0)
 
+class SSIM(torch.jit.ScriptModule):
+    __constants__ = ["data_range", "use_padding"]
 
-class SSIM(torch.nn.Module):
     def __init__(
         self,
         window_size=11,
         window_sigma=1.5,
-        data_range=1.0,
+        data_range=255.0,
         channel=3,
         use_padding=False,
     ):
+        """
+        :param window_size: the size of gauss kernel
+        :param window_sigma: sigma of normal distribution
+        :param data_range: value range of input images. (usually 1.0 or 255)
+        :param channel: input channels (default: 3)
+        :param use_padding: padding image before conv
+        """
         super().__init__()
-
+        assert window_size % 2 == 1, "Window size must be odd."
+        window = create_window(window_size, window_sigma, channel)
+        self.register_buffer("window", window)
         self.data_range = data_range
         self.use_padding = use_padding
 
-        window = create_window(window_size, window_sigma, channel)
-        self.register_buffer("window", window)
-
-    def forward(self, X, Y, mask=None):
-        ssim_val, _ = ssim(
+    @torch.jit.script_method
+    def forward(self, X, Y):
+        r = ssim(
             X,
             Y,
             window=self.window,
             data_range=self.data_range,
             use_padding=self.use_padding,
-            mask=mask,
         )
-        return ssim_val
+        return r[0]
 
 
-class MS_SSIM(torch.nn.Module):
+class MS_SSIM(torch.jit.ScriptModule):
+    __constants__ = ["data_range", "use_padding", "eps"]
+
     def __init__(
         self,
         window_size=11,
@@ -164,8 +188,19 @@ class MS_SSIM(torch.nn.Module):
         levels=None,
         eps=1e-8,
     ):
+        """
+        class for ms-ssim
+        :param window_size: the size of gauss kernel
+        :param window_sigma: sigma of normal distribution
+        :param data_range: value range of input images. (usually 1.0 or 255)
+        :param channel: input channels
+        :param use_padding: padding image before conv
+        :param weights: weights for different levels. (default [0.0448, 0.2856, 0.3001, 0.2363, 0.1333])
+        :param levels: number of downsampling
+        :param eps: Use for fix a issue. When c = a ** b and a is 0, c.backward() will cause the a.grad become inf.
+        """
         super().__init__()
-
+        assert window_size % 2 == 1, "Window size must be odd."
         self.data_range = data_range
         self.use_padding = use_padding
         self.eps = eps
@@ -175,7 +210,6 @@ class MS_SSIM(torch.nn.Module):
 
         if weights is None:
             weights = [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]
-
         weights = torch.tensor(weights, dtype=torch.float)
 
         if levels is not None:
@@ -184,15 +218,15 @@ class MS_SSIM(torch.nn.Module):
 
         self.register_buffer("weights", weights)
 
-    def forward(self, X, Y, mask=None):
-        return 1.0 - ms_ssim(
+    @torch.jit.script_method
+    def forward(self, X, Y):
+        return 1 - ms_ssim(
             X,
             Y,
             window=self.window,
             data_range=self.data_range,
             weights=self.weights,
             use_padding=self.use_padding,
-            mask=mask,
             eps=self.eps,
         )
 
@@ -202,7 +236,7 @@ def masked_mse(
     X: torch.Tensor,
     Y: torch.Tensor,
     mask: Optional[torch.Tensor] = None,
-    data_range: float = 255.0,
+    data_range: float = 1.0,
     normalization: bool = False,
     eps: float = 1e-8,
 ):
@@ -232,7 +266,7 @@ def psnr(
     X: torch.Tensor,
     Y: torch.Tensor,
     mask: Optional[torch.Tensor] = None,
-    data_range: float = 255.0,
+    data_range: float = 1.0,
     normalization: bool = False,
     eps: float = 1e-8,
 ):
@@ -268,7 +302,7 @@ class MSE(torch.nn.Module):
 
 class PSNR(torch.nn.Module):
     def __init__(
-        self, normalization: bool = False, data_range: float = 255.0, eps: float = 1e-8
+        self, normalization: bool = False, data_range: float = 1.0, eps: float = 1e-8
     ):
         super().__init__()
         self.normalization = normalization

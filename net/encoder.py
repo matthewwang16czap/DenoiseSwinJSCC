@@ -24,7 +24,7 @@ class BasicLayer(nn.Module):
         self.blocks = nn.ModuleList(
             [
                 SwinTransformerBlock(
-                    dim=out_dim,
+                    dim=dim,
                     num_heads=num_heads,
                     window_size=window_size,
                     shift_size=0 if (i % 2 == 0) else window_size // 2,
@@ -54,12 +54,11 @@ class BasicLayer(nn.Module):
             x: transformed features
             H, W: updated resolution
         """
+        for blk in self.blocks:
+            x = blk(x, H, W)
 
         if self.downsample is not None:
             x, H, W = self.downsample(x, H, W)
-
-        for blk in self.blocks:
-            x = blk(x, H, W)
 
         return x, H, W
 
@@ -90,7 +89,7 @@ class SwinJSCC_Encoder(nn.Module):
         self.patch_size = patch_size
         self.mlp_ratio = mlp_ratio
 
-        # Patch embedding (resolution-agnostic)
+        # Patch embedding
         self.patch_embed = PatchEmbed(
             patch_size=patch_size,
             in_chans=in_chans,
@@ -102,8 +101,12 @@ class SwinJSCC_Encoder(nn.Module):
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             layer = BasicLayer(
-                dim=embed_dims[i_layer - 1] if i_layer > 0 else embed_dims[0],
-                out_dim=embed_dims[i_layer],
+                dim=embed_dims[i_layer],
+                out_dim=(
+                    embed_dims[i_layer + 1]
+                    if i_layer < self.num_layers - 1
+                    else embed_dims[-1]
+                ),
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
@@ -111,7 +114,7 @@ class SwinJSCC_Encoder(nn.Module):
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
                 norm_layer=norm_layer,
-                downsample=PatchMerging if i_layer > 0 else None,
+                downsample=(PatchMerging if i_layer < self.num_layers - 1 else None),
             )
             self.layers.append(layer)
 
@@ -185,8 +188,7 @@ class SwinJSCC_Encoder(nn.Module):
         device = x.device
 
         # Patch embedding
-        x = self.patch_embed(x)
-        H, W = H // self.patch_size, W // self.patch_size
+        x, H, W = self.patch_embed(x)
 
         # Backbone
         for layer in self.layers:

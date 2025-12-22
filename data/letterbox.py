@@ -1,6 +1,9 @@
 import cv2
 import numpy as np
 from typing import Any
+from utils import get_path
+import torchvision
+import torch
 
 
 class LetterBox:
@@ -106,7 +109,7 @@ class LetterBox:
             pad_image[top : top + h, left : left + w] = image
             image = pad_image
 
-        valid = np.ones(self.new_shape, dtype=np.uint8)
-        valid[top : top + h, left : left + w] = 0
+        valid = np.zeros(self.new_shape, dtype=np.uint8)
+        valid[top : top + h, left : left + w] = 1
 
         return image, valid

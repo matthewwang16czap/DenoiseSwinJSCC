@@ -71,6 +71,8 @@ class SwinJSCC_Decoder(nn.Module):
     def __init__(
         self,
         model,
+        patch_size,
+        out_chans,
         embed_dims,
         depths,
         num_heads,
@@ -89,13 +91,22 @@ class SwinJSCC_Decoder(nn.Module):
         self.patch_norm = patch_norm
         self.mlp_ratio = mlp_ratio
 
+        self.patch_unembed = PatchUnembed(
+            patch_size,
+            out_chans,
+            embed_dims[-1],
+            norm_layer if patch_norm else None,
+        )
+
         # Build decoder layers (low → high resolution)
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             layer = BasicLayer(
-                dim=int(embed_dims[i_layer]),
+                dim=embed_dims[i_layer],
                 out_dim=(
-                    int(embed_dims[i_layer + 1]) if i_layer < self.num_layers - 1 else 3
+                    embed_dims[i_layer + 1]
+                    if i_layer < self.num_layers - 1
+                    else embed_dims[-1]
                 ),
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
@@ -104,7 +115,9 @@ class SwinJSCC_Decoder(nn.Module):
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
                 norm_layer=norm_layer,
-                upsample=PatchReverseMerging,
+                upsample=(
+                    PatchReverseMerging if i_layer < self.num_layers - 1 else None
+                ),
             )
             self.layers.append(layer)
 
@@ -161,7 +174,15 @@ class SwinJSCC_Decoder(nn.Module):
     # -------------------------------------------------
     # Forward
     # -------------------------------------------------
-    def forward(self, x, snr, model, H, W):
+    def forward(
+        self,
+        x,
+        snr,
+        model,
+        H,
+        W,
+        mask=None,
+    ):
         """
         x: (B, L, C)  latent symbols
         """
@@ -189,12 +210,18 @@ class SwinJSCC_Decoder(nn.Module):
             x, H, W = layer(x, H, W)
 
         # Tokens → image
-        x = x.view(B, H, W, 3).permute(0, 3, 1, 2).contiguous()
+        x, H, W = self.patch_unembed(x, H, W)
 
         # Nornalize to [0,1]
         x = self.tanh(x)
         x = 0.5 * (x + 1.0)
-        return x
+
+        if mask is not None:
+            if mask.dim() == 3:
+                mask = mask.unsqueeze(1)
+            return x * mask
+        else:
+            return x
 
     # -------------------------------------------------
     # Init

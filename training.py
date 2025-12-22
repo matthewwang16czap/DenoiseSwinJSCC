@@ -131,6 +131,12 @@ def test(net, test_loader, logger, args, config):
                     start_time = time.time()
 
                     input, valid = data
+
+                    save_path = get_path(
+                        ".", "recons", f"origin_{batch_idx}_{SNR}_{rate}.png"
+                    )
+                    torchvision.utils.save_image(input[0], save_path)
+
                     input = input.to(config.device, non_blocking=True)
                     valid = valid.to(config.device, non_blocking=True)
 
@@ -148,17 +154,14 @@ def test(net, test_loader, logger, args, config):
                         img_loss,
                     ) = net(input, valid, SNR, rate)
 
-                    torchvision.utils.save_image(
-                        recon_image,
-                        os.path.join(
-                            config.home_dir,
-                            f"/recons/recon_{batch_idx}_{SNR}_{rate}.png",
-                        ),
+                    # --- save recon images ---
+                    save_path = get_path(
+                        ".", "recons", f"recon_{batch_idx}_{SNR}_{rate}.png"
                     )
+                    torchvision.utils.save_image(recon_image[0], save_path)
 
                     # --- update metrics ---
                     metrics["elapsed"].update(time.time() - start_time)
-                    metrics["losses"].update(img_loss.item())
                     metrics["cbrs"].update(CBR)
                     metrics["snrs"].update(SNR)
                     metrics["psnrs"].update(psnr.item())

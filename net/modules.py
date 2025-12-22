@@ -280,6 +280,7 @@ class PatchEmbed(nn.Module):
 
     def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
         super().__init__()
+        self.patch_size = patch_size
         self.in_chans = in_chans
         self.embed_dim = embed_dim
         self.proj = nn.Conv2d(
@@ -294,10 +295,173 @@ class PatchEmbed(nn.Module):
         Returns:
             x: (B, num_patches, embed_dim)
         """
+        B, C, H, W = x.shape
         x = self.proj(x).flatten(2).transpose(1, 2)  # B, num_patches, embed_dim
         if self.norm is not None:
             x = self.norm(x)
-        return x
+        return x, H // self.patch_size, W // self.patch_size
+
+
+class PatchUnembed(nn.Module):
+    """
+    Reconstruct image from patch embeddings.
+    Inverse of Conv2d-based PatchEmbed.
+    """
+
+    def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+        super().__init__()
+        self.patch_size = patch_size
+        self.in_chans = in_chans
+        self.embed_dim = embed_dim
+
+        # Optional token-space normalization (CORRECT place)
+        self.norm = norm_layer(embed_dim) if norm_layer is not None else None
+
+        # Linear projection back to raw patch pixels
+        self.proj = nn.Linear(embed_dim, patch_size * patch_size * in_chans)
+
+    def forward(self, x, H, W):
+        """
+        x: (B, H*W, embed_dim)
+        H, W: patch grid size
+        """
+        B, N, C = x.shape
+        assert C == self.embed_dim
+        assert N == H * W
+
+        # Token-space normalization
+        if self.norm is not None:
+            x = self.norm(x)
+
+        # Project tokens → raw patch pixels
+        x = self.proj(x)
+
+        # Reassemble patches
+        x = x.view(B, H, W, self.in_chans, self.patch_size, self.patch_size)
+        x = x.permute(0, 3, 1, 4, 2, 5).contiguous()
+        x = x.view(B, self.in_chans, H * self.patch_size, W * self.patch_size)
+
+        return x, H * self.patch_size, W * self.patch_size
+
+
+# class PatchUnembed(nn.Module):
+#     """Reconstruct image from patch embeddings (compatible with original PatchEmbed)"""
+
+#     def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+#         super().__init__()
+#         self.patch_size = patch_size
+#         self.in_chans = in_chans
+#         self.embed_dim = embed_dim
+
+#         # Transposed convolution to invert the patch embedding
+#         self.proj = nn.ConvTranspose2d(
+#             embed_dim, in_chans, kernel_size=patch_size, stride=patch_size
+#         )
+#         self.norm = norm_layer(in_chans) if norm_layer is not None else None
+
+#     def forward(self, x, H, W):
+#         """
+#         Args:
+#             x: (B, num_patches, embed_dim)
+#             H, W: spatial resolution in patches (height and width)
+#         Returns:
+#             x: (B, in_chans, H*patch_size, W*patch_size)
+#         """
+#         B, N, C = x.shape
+#         assert C == self.embed_dim, f"Expected embed_dim={self.embed_dim}, got {C}"
+#         assert N == H * W, f"Number of patches ({N}) does not match H*W ({H*W})"
+
+#         # reshape to (B, embed_dim, H_patch, W_patch)
+#         x = x.transpose(1, 2).contiguous().view(B, C, H, W)
+
+#         # apply transposed conv to reconstruct image
+#         x = self.proj(x)
+#         if self.norm is not None:
+#             x = self.norm(x)
+
+#         return x, H * self.patch_size, W * self.patch_size
+
+
+# class PatchEmbed(nn.Module):
+#     """Image to Patch Embedding (Swin-style, resolution-agnostic)"""
+
+#     def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+#         super().__init__()
+#         self.patch_size = patch_size
+#         self.in_chans = in_chans
+#         self.embed_dim = embed_dim
+#         self.proj = nn.Linear(patch_size * patch_size * in_chans, embed_dim)
+#         self.norm = norm_layer(embed_dim) if norm_layer is not None else None
+
+#     def forward(self, x):
+#         B, C, H, W = x.shape
+#         assert (
+#             H % self.patch_size == 0 and W % self.patch_size == 0
+#         ), "Image not divisible by patch size"
+
+#         # reshape image into non-overlapping patches
+#         x = x.unfold(
+#             2, self.patch_size, self.patch_size
+#         )  # B, C, H_patch, patch_size, W
+#         x = x.unfold(
+#             3, self.patch_size, self.patch_size
+#         )  # B, C, H_patch, W_patch, patch_size
+#         x = x.permute(
+#             0, 2, 3, 1, 4, 5
+#         ).contiguous()  # B, H_patch, W_patch, C, patch_size, patch_size
+#         x = x.view(
+#             B, -1, C * self.patch_size * self.patch_size
+#         )  # B, num_patches, patch_flattened
+
+#         x = self.proj(x)
+#         if self.norm is not None:
+#             x = self.norm(x)
+#         return x, H // self.patch_size, W // self.patch_size
+
+
+# class PatchUnembed(nn.Module):
+#     """Reconstruct image from patch embeddings (Swin-style)"""
+
+#     def __init__(self, patch_size=4, in_chans=3, embed_dim=128, norm_layer=None):
+#         super().__init__()
+#         self.patch_size = patch_size
+#         self.in_chans = in_chans
+#         self.embed_dim = embed_dim
+
+#         # Linear projection back to raw patch pixels
+#         self.proj = nn.Linear(embed_dim, patch_size * patch_size * in_chans)
+#         self.norm = (
+#             norm_layer(patch_size * patch_size * in_chans)
+#             if norm_layer is not None
+#             else None
+#         )
+
+#     def forward(self, x, H, W):
+#         """
+#         x: (B, num_patches, embed_dim)
+#         H, W: spatial resolution of patches (height and width in patches)
+#         returns: (B, C, H*patch_size, W*patch_size)
+#         """
+#         B, N, C_embed = x.shape
+#         assert (
+#             C_embed == self.embed_dim
+#         ), f"Expected embed_dim={self.embed_dim}, got {C_embed}"
+#         assert N == H * W, f"Number of patches ({N}) does not match H*W ({H*W})"
+
+#         # Linear projection back to raw pixels
+#         x = self.proj(x)  # (B, N, patch_size*patch_size*in_chans)
+
+#         if self.norm is not None:
+#             x = self.norm(x)
+
+#         # Reshape to image
+#         x = x.view(B, H, W, self.in_chans, self.patch_size, self.patch_size)
+#         x = x.permute(
+#             0, 3, 1, 4, 2, 5
+#         ).contiguous()  # B, C, H_patch, patch_size, W_patch, patch_size
+#         x = x.view(B, self.in_chans, H * self.patch_size, W * self.patch_size)
+
+#         return x, H * self.patch_size, W * self.patch_size
 
 
 class SwinTransformerBlock(nn.Module):
