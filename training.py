@@ -132,10 +132,9 @@ def test(net, test_loader, logger, args, config):
 
                     input, valid = data
 
-                    save_path = get_path(
-                        ".", "recons", f"origin_{batch_idx}_{SNR}_{rate}.png"
-                    )
-                    torchvision.utils.save_image(input[0], save_path)
+                    if i == 0 and j == 0:
+                        save_path = get_path(".", "recons", f"origin_{batch_idx}.png")
+                        torchvision.utils.save_image(input[0], save_path)
 
                     input = input.to(config.device, non_blocking=True)
                     valid = valid.to(config.device, non_blocking=True)

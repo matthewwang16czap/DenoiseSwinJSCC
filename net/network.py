@@ -6,6 +6,10 @@ from net.channel import Channel
 from random import choice
 import torch
 import torch.nn as nn
+from torchmetrics.image import (
+    StructuralSimilarityIndexMeasure as SSIM,
+    MultiScaleStructuralSimilarityIndexMeasure as MS_SSIM,
+)
 from net.unet2d import UNet2D
 from net.attractor import Attractor
 
@@ -24,15 +28,13 @@ class SwinJSCC(nn.Module):
             config.logger.info(encoder_kwargs)
             config.logger.info("Decoder: ")
             config.logger.info(decoder_kwargs)
-        self.distortion_loss = Distortion(args)
         self.feature_mse_loss = FeatureMSELoss()
         self.feature_orthogonal_loss = FeatureOrthogonalLoss(alpha=0.8)
         self.channel = Channel(args, config)
         self.pass_channel = config.pass_channel
-        self.mse = MSE(normalization=False)
-        self.psnr = PSNR(normalization=False)
-        self.ssim = SSIM()
-        self.msssim = MS_SSIM(data_range=1.0, levels=4, channel=3)
+        self.mse_loss = MSEWithPSNR(normalization=False)
+        self.ssim = SSIM(data_range=1.0)
+        self.msssim = MS_SSIM(data_range=1.0)
         self.multiple_snr = args.multiple_snr.split(",")
         for i in range(len(self.multiple_snr)):
             self.multiple_snr[i] = int(self.multiple_snr[i])
@@ -105,14 +107,13 @@ class SwinJSCC(nn.Module):
             restored_feature, chan_param, self.model, feature_H, feature_W, valid
         )
 
-        # --- Compute metrics ---
-        mse = self.mse(input_image, recon_image).mean().detach()
-        psnr = self.psnr(input_image, recon_image).mean().detach()
-        ssim = self.ssim(input_image, recon_image).mean().detach()
-        msssim = self.msssim(input_image, recon_image).mean().detach()
-
-        # --- Compute image loss ---
-        img_loss = self.distortion_loss(input_image, recon_image).mean()
+        # --- Compute loss and metrics ---
+        img_loss, mse, psnr = self.mse_loss(recon_image, input_image, valid)
+        img_loss = img_loss.mean()
+        mse = mse.mean()
+        psnr = psnr.mean()
+        ssim = self.ssim(recon_image, input_image).mean().detach()
+        msssim = self.msssim(recon_image, input_image).mean().detach()
 
         return (
             recon_image,

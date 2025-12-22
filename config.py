@@ -44,6 +44,7 @@ class Config:
 
     def _setup_dataset(self, args):
         """Configure dataset and model-specific parameters."""
+        self.dataset_type = "RandomResizedCrop"  # or "LetterBox"
         if args.trainset == "DIV2K":
             self._setup_div2k(args)
         elif args.trainset == "COCO":
@@ -159,7 +160,7 @@ class Config:
             model=args.model,
             patch_size=4,
             in_chans=3,
-            embed_dims=[96, 192, 384, 768],
+            embed_dims=[48, 96, 192, 384],
             depths=size_map[args.model_size]["depths"],
             num_heads=size_map[args.model_size]["num_heads"],
             C=self.channel_number,
@@ -175,7 +176,7 @@ class Config:
             model=args.model,
             patch_size=4,
             out_chans=3,
-            embed_dims=[768, 384, 192, 96],
+            embed_dims=[384, 192, 96, 48],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],
             C=self.channel_number,

@@ -13,10 +13,10 @@ from data.letterbox import LetterBox
 NUM_DATASET_WORKERS = 8
 
 
-class ImageDataset(Dataset):
+class LetterboxImageDataset(Dataset):
     def __init__(self, dirs, image_dims):
         """
-        dirs: paths to COCO train2017 or val2017
+        dirs: paths to images
         image_dims: (C, H, W)
         """
         self.paths = []
@@ -61,7 +61,7 @@ class ImageDataset(Dataset):
         return img, valid
 
 
-class ImageFolderWithResize(Dataset):
+class RandomResizedCropImageDataset(Dataset):
     def __init__(self, dirs, image_dims, train):
         """
         dirs: a list of directories
@@ -114,13 +114,14 @@ def get_dataset(name, data_dirs, config, train):
     config: config object containing image_dims
     """
     name = name.upper()
-    return ImageFolderWithResize(
+    if config.dataset_type.lower() == "letterbox":
+        return LetterboxImageDataset(dirs=data_dirs, image_dims=config.image_dims)
+    return RandomResizedCropImageDataset(
         dirs=data_dirs, image_dims=config.image_dims, train=train
     )
 
 
 def get_loader(args, config, rank=None, world_size=None):
-
     # ------------------------ Train Dataset ------------------------ #
     train_dataset = get_dataset(
         name=args.trainset, data_dirs=config.train_data_dir, config=config, train=True
