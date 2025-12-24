@@ -10,8 +10,6 @@ from torch.utils.data import DataLoader, DistributedSampler
 import cv2
 from data.letterbox import LetterBox
 
-NUM_DATASET_WORKERS = 8
-
 
 class LetterboxImageDataset(Dataset):
     def __init__(self, dirs, image_dims):
@@ -121,7 +119,7 @@ def get_dataset(name, data_dirs, config, train):
     )
 
 
-def get_loader(args, config, rank=None, world_size=None):
+def get_loader(args, config, rank=None, world_size=None, num_workers=None):
     # ------------------------ Train Dataset ------------------------ #
     train_dataset = get_dataset(
         name=args.trainset, data_dirs=config.train_data_dir, config=config, train=True
@@ -145,17 +143,21 @@ def get_loader(args, config, rank=None, world_size=None):
         train_sampler = None
         shuffle = True
 
+    if num_workers is None:
+        num_workers = min(4, os.cpu_count() // world_size)
+
     # ------------------------ Train Loader ------------------------- #
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=config.batch_size,
         shuffle=shuffle,
         sampler=train_sampler,
-        num_workers=NUM_DATASET_WORKERS,
-        pin_memory=True,
+        num_workers=num_workers,
+        pin_memory=False,
         worker_init_fn=worker_init_fn_seed,
         drop_last=True,
         persistent_workers=False,
+        prefetch_factor=2,
     )
 
     # ------------------------ Test Loader -------------------------- #
@@ -165,8 +167,9 @@ def get_loader(args, config, rank=None, world_size=None):
         dataset=test_dataset,
         batch_size=test_batch,
         shuffle=False,
-        num_workers=NUM_DATASET_WORKERS,
-        pin_memory=True,
+        num_workers=num_workers,
+        pin_memory=False,
+        prefetch_factor=2,
     )
 
     return train_loader, test_loader, train_sampler

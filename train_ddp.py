@@ -116,7 +116,13 @@ if __name__ == "__main__":
     config = Config(args)
     config.device = ddp_env["device"]
     config.device_id = ddp_env["device_id"]
-    config.batch_size = config.batch_size // ddp_env["world_size"]
+    # config.batch_size = config.batch_size // ddp_env["world_size"]
+    if ddp_env["world_size"] <= 3:
+        config.accum_steps = 1
+    elif ddp_env["world_size"] == 4:
+        config.accum_steps = 2
+    else:
+        config.accum_steps = 4
 
     base_seed = 42 + ddp_env["rank"]  # Different seed per GPU
     seed_torch(base_seed)
@@ -137,6 +143,28 @@ if __name__ == "__main__":
     # model_path = "./checkpoints/denoised_EP4600.model"
     # model_path = "./checkpoints/full.model"
     # load_weights(net, model_path)
+
+    # --- Freeze params ---
+    if args.denoise_training:
+        for name, param in net.named_parameters():
+            param.requires_grad = False
+
+        if args.stage == 1:
+            for name, param in net.named_parameters():
+                if "feature_denoiser" in name or "adapter" in name:
+                    param.requires_grad = True
+        elif args.stage == 2:
+            # for name, param in model.decoder.named_parameters():
+            #     if "bm_list" in name or "sm_list" in name or "head_list" in name:
+            #         param.requires_grad = True
+            for name, param in net.named_parameters():
+                if "adapter" in name or "decoder" in name:
+                    param.requires_grad = True
+        elif args.stage == 3:
+            for name, param in net.named_parameters():
+                # if "encoder" in name or "decoder" in name:
+                #     param.requires_grad = True
+                param.requires_grad = True
 
     ### DDP CHANGE — wrap model
     if ddp_env["world_size"] > 1:
@@ -202,27 +230,6 @@ if __name__ == "__main__":
                     scaler,
                 )
             else:
-                # --- Freeze params ---
-                for name, param in model.named_parameters():
-                    param.requires_grad = False
-
-                if args.stage == 1:
-                    for name, param in model.named_parameters():
-                        if "feature_denoiser" in name or "adapter" in name:
-                            param.requires_grad = True
-                elif args.stage == 2:
-                    # for name, param in model.decoder.named_parameters():
-                    #     if "bm_list" in name or "sm_list" in name or "head_list" in name:
-                    #         param.requires_grad = True
-                    for name, param in model.named_parameters():
-                        if "adapter" in name or "decoder" in name:
-                            param.requires_grad = True
-                elif args.stage == 3:
-                    for name, param in model.named_parameters():
-                        # if "encoder" in name or "decoder" in name:
-                        #     param.requires_grad = True
-                        param.requires_grad = True
-
                 if args.stage == 1:
                     global_step = train_one_epoch_denoiser(
                         epoch,

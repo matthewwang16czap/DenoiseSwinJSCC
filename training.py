@@ -17,7 +17,10 @@ def train_one_epoch(
     config,
     scaler,
 ):
+    is_ddp = hasattr(net, "module")
     net.train()
+    optimizer.zero_grad(set_to_none=True)
+
     # Initialize metrics
     metrics_names = ["elapsed", "losses", "psnrs", "ssims", "msssims", "cbrs", "snrs"]
     metrics = {name: AverageMeter() for name in metrics_names}
@@ -27,8 +30,8 @@ def train_one_epoch(
         global_step += 1
 
         input, valid = data
-        input = input.to(config.device, non_blocking=True)
-        valid = valid.to(config.device, non_blocking=True)
+        input = input.to(config.device)
+        valid = valid.to(config.device)
 
         # Forward and backward pass
         optimizer.zero_grad()
@@ -46,13 +49,26 @@ def train_one_epoch(
                 [mse, psnr, ssim, msssim],
                 img_loss,
             ) = net(input, valid)
+            img_loss = img_loss / config.accum_steps
+        # --- Backward pass ---
         if scaler is not None:
-            scaler.scale(img_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            if is_ddp and (batch_idx % config.accum_steps != config.accum_steps - 1):
+                # During accumulation, avoid syncing DDP gradients
+                with net.no_sync():
+                    scaler.scale(img_loss).backward()
+            else:
+                scaler.scale(img_loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
         else:
-            img_loss.backward()
-            optimizer.step()
+            if is_ddp and (batch_idx % config.accum_steps != config.accum_steps - 1):
+                with net.no_sync():
+                    img_loss.backward()
+            else:
+                img_loss.backward()
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
 
         # Update metrics
         metrics["elapsed"].update(time.time() - start_time)
@@ -75,7 +91,7 @@ def train_one_epoch(
                 f"Epoch {epoch}",
                 f"Step [{batch_idx + 1}/{len(train_loader)}={process:.2f}%]",
                 f"Time {metrics['elapsed'].val:.3f}",
-                f"Loss {metrics['losses'].val:.3f}",
+                f"Loss {metrics['losses'].val:.2e}",
                 f"CBR {metrics['cbrs'].val:.4f}",
                 f"SNR {metrics['snrs'].val:.1f}",
                 f"PSNR {metrics['psnrs'].val:.3f}",
@@ -224,8 +240,8 @@ def train_one_epoch_denoiser(
         global_step += 1
 
         input, valid = data
-        input = input.to(config.device, non_blocking=True)
-        valid = valid.to(config.device, non_blocking=True)
+        input = input.to(config.device)
+        valid = valid.to(config.device)
 
         # Forward pass
         optimizer.zero_grad()
@@ -294,7 +310,7 @@ def train_one_epoch_denoiser(
         if global_step % config.print_step == 0:
             logger.info(
                 f"[Epoch {epoch} | Step {global_step}] "
-                f"Loss {metrics['losses'].val:.4f} | "
+                f"Loss {metrics['losses'].val:.2e} | "
                 f"CBR {metrics['cbrs'].val:.4f} | "
                 f"SNR {metrics['snrs'].val:.2f} | "
                 f"SNR(denoised) {metrics['chan_params'].val:.2f} | "
