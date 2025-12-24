@@ -18,8 +18,8 @@ class Config:
         self.plot_step = 10000
         self.filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.workdir = f"./history/{self.filename}"
-        self.homedir = "/home/matthewwang16czap/"
-        # self.homedir = "/home/gexin/"
+        # self.homedir = "/home/matthewwang16czap/"
+        self.homedir = "/home/gexin/"
         # self.homedir = "/public/home/sihanwang/"
         self.log = f"{self.workdir}/Log_{self.filename}.log"
         self.samples = f"{self.workdir}/samples"
@@ -150,7 +150,7 @@ class Config:
             self.channel_number = None
 
         size_map = {
-            "base": dict(depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24]),
+            "base": dict(depths=[2, 2, 6, 2], num_heads=[2, 4, 8, 16]),
         }
 
         if args.model_size not in size_map:
@@ -160,7 +160,7 @@ class Config:
             model=args.model,
             patch_size=4,
             in_chans=3,
-            embed_dims=[48, 96, 192, 384],
+            embed_dims=[64, 128, 256, 512],
             depths=size_map[args.model_size]["depths"],
             num_heads=size_map[args.model_size]["num_heads"],
             C=self.channel_number,
@@ -176,7 +176,7 @@ class Config:
             model=args.model,
             patch_size=4,
             out_chans=3,
-            embed_dims=[384, 192, 96, 48],
+            embed_dims=[512, 256, 128, 64],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],
             C=self.channel_number,
