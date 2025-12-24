@@ -116,6 +116,7 @@ if __name__ == "__main__":
     config = Config(args)
     config.device = ddp_env["device"]
     config.device_id = ddp_env["device_id"]
+    config.batch_size = config.batch_size // ddp_env["world_size"]
 
     base_seed = 42 + ddp_env["rank"]  # Different seed per GPU
     seed_torch(base_seed)
@@ -128,6 +129,9 @@ if __name__ == "__main__":
 
     # --- Model ---
     net = SwinJSCC(args, config).to(config.device)
+    # if ddp_env["rank"] == 0:
+    #     logger.info(net)
+
     # model_path = "./checkpoints/pretrained_EP12500.model"
     # model_path = "./checkpoints/fix_snr_fix_cbr_model.model"
     # model_path = "./checkpoints/denoised_EP4600.model"

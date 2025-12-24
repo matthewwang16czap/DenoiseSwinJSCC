@@ -13,7 +13,7 @@
             "args": [
                 "--nproc_per_node=1",
                 "train_ddp.py",
-                "--trainset", "DIV2K",
+                "--trainset", "COCO",
                 "--testset", "kodak",
                 "--distortion-metric", "MSE",
                 "--model", "SwinJSCC_w/_SAandRA",
@@ -22,7 +22,7 @@
                 "--multiple-snr", "1,4,7,10,13",
                 "--model_size", "base",
                 "--amp",
-                // "--training",
+                "--training",
                 // "--denoise-training",
                 // "--stage", "1",
                 // "--denoise",
