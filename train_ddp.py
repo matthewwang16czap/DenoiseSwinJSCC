@@ -144,7 +144,7 @@ if __name__ == "__main__":
             net,
             device_ids=[config.device_id],
             output_device=config.device_id,
-            find_unused_parameters=True,
+            find_unused_parameters=False,
         )
 
     # Check if model is wrapped in DDP

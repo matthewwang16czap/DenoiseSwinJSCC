@@ -13,7 +13,7 @@
             "args": [
                 "--nproc_per_node=1",
                 "train_ddp.py",
-                "--trainset", "COCO",
+                "--trainset", "DIV2K",
                 "--testset", "kodak",
                 "--distortion-metric", "MSE",
                 "--model", "SwinJSCC_w/_SAandRA",
