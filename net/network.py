@@ -110,6 +110,8 @@ class SwinJSCC(nn.Module):
         # --- Compute loss and metrics ---
         img_loss, mse, psnr = self.mse_loss(recon_image, input_image, valid)
         img_loss = img_loss.mean()
+        # rescale to [0,255] loss to avoid too small loss
+        img_loss = img_loss * 255 * 255
         mse = mse.mean()
         psnr = psnr.mean()
         ssim = self.ssim(recon_image, input_image).mean().detach()

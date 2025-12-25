@@ -14,6 +14,11 @@ from config import Config
 from training import *
 
 
+# torch.backends.cuda.enable_flash_sdp(True)
+# torch.backends.cuda.enable_mem_efficient_sdp(True)
+# torch.backends.cuda.enable_math_sdp(False)
+
+
 def setup_ddp():
     """Initialize distributed environment and return device info."""
     # Get local rank (provided by torchrun)

@@ -34,7 +34,6 @@ def train_one_epoch(
         valid = valid.to(config.device)
 
         # Forward and backward pass
-        optimizer.zero_grad()
         with torch.amp.autocast(device_type="cuda", enabled=(scaler is not None)):
             (
                 recon_image,
