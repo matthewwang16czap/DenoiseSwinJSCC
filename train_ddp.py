@@ -60,7 +60,7 @@ if __name__ == "__main__":
         "--testset",
         type=str,
         default="ffhq",
-        choices=["kodak", "CLIC21", "ffhq"],
+        choices=["kodak", "CLIC21", "ffhq", "COCO"],
         help="specify the testset for HR models",
     )
     parser.add_argument(
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         "--model_size",
         type=str,
         default="base",
-        choices=["small", "base", "large"],
+        choices=["small", "base", "large", "baseline"],
         help="SwinJSCC model size",
     )
     parser.add_argument("--denoise", action="store_true", help="add denoising module")
