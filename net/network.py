@@ -43,7 +43,7 @@ class SwinJSCC(nn.Module):
             self.channel_number[i] = int(self.channel_number[i])
         self.downsample = config.downsample
         self.model = args.model
-        # feature_channels = encoder_kwargs["embed_dims"][-1]
+        feature_channels = encoder_kwargs["embed_dims"][-1]
         self.feature_denoiser = (
             Attractor(
                 channels=encoder_kwargs["embed_dims"][-1],
@@ -51,6 +51,16 @@ class SwinJSCC(nn.Module):
             if args.denoise
             else None
         )
+        # self.feature_denoiser = (
+        #     UNet2D(
+        #         channels=encoder_kwargs["embed_dims"][-1],
+        #         hidden=encoder_kwargs["embed_dims"][-1],
+        #         depth=3,
+        #         factor=1,
+        #     )
+        #     if args.denoise
+        #     else None
+        # )
 
     def feature_pass_channel(self, feature, chan_param, avg_pwr=False):
         noisy_feature = self.channel.forward(feature, chan_param, avg_pwr)
@@ -93,6 +103,9 @@ class SwinJSCC(nn.Module):
             restored_feature, pred_noise = self.feature_denoiser(
                 noisy_feature, mask
             )  # predict noise
+            # restored_feature, pred_noise = self.feature_denoiser(
+            #     noisy_feature, mask, SNR, feature_H, feature_W
+            # )  # predict noise
             # repredict chan_param
             signal_power = (((feature * mask) ** 2).sum() / mask.sum()).detach()
             restore_mse = self.feature_mse_loss(
@@ -119,14 +132,9 @@ class SwinJSCC(nn.Module):
 
         return (
             recon_image,
-            restored_feature,
-            pred_noise,
-            noisy_feature,
-            feature,
-            mask,
-            CBR,
-            SNR,
-            chan_param,
+            [restored_feature, pred_noise, noisy_feature, feature],
+            [mask, feature_H, feature_W],
+            [CBR, SNR, chan_param],
             [mse, psnr, ssim, msssim],
             img_loss,
         )

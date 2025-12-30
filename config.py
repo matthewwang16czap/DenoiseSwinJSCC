@@ -18,8 +18,8 @@ class Config:
         self.plot_step = 10000
         self.filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.workdir = f"./history/{self.filename}"
-        # self.homedir = "/home/matthewwang16czap/"
-        self.homedir = "/home/gexin/"
+        self.homedir = "/home/matthewwang16czap/"
+        # self.homedir = "/home/gexin/"
         # self.homedir = "/public/home/sihanwang/"
         self.log = f"{self.workdir}/Log_{self.filename}.log"
         self.samples = f"{self.workdir}/samples"
@@ -32,8 +32,8 @@ class Config:
         # --- Training details ---
         self.normalize = False
         self.learning_rate = 1e-4
-        self.alpha_losses = [1, 1, 1, 1]
-        # self.alpha_losses = [1, 1, 1, 1/(255.0**2)]
+        # self.alpha_losses = [1, 1, 1, 1]
+        self.alpha_losses = [1, 1, 1, 1 / (255.0**2)]
         self.tot_epoch = 10_000_000
 
         # --- Model toggles ---

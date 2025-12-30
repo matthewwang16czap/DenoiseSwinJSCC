@@ -37,14 +37,9 @@ def train_one_epoch(
         with torch.amp.autocast(device_type="cuda", enabled=(scaler is not None)):
             (
                 recon_image,
-                restored_feature,
-                pred_noise,
-                noisy_feature,
-                feature,
-                mask,
-                CBR,
-                SNR,
-                chan_param,
+                [restored_feature, pred_noise, noisy_feature, feature],
+                [mask, feature_H, feature_W],
+                [CBR, SNR, chan_param],
                 [mse, psnr, ssim, msssim],
                 img_loss,
             ) = net(input, valid)
@@ -156,14 +151,9 @@ def test(net, test_loader, logger, args, config):
 
                     (
                         recon_image,
-                        restored_feature,
-                        pred_noise,
-                        noisy_feature,
-                        feature,
-                        mask,
-                        CBR,
-                        SNR,
-                        chan_param,
+                        [restored_feature, pred_noise, noisy_feature, feature],
+                        [mask, feature_H, feature_W],
+                        [CBR, SNR, chan_param],
                         [mse, psnr, ssim, msssim],
                         img_loss,
                     ) = net(input, valid, SNR, rate)
@@ -247,14 +237,9 @@ def train_one_epoch_denoiser(
         with torch.amp.autocast(device_type="cuda", enabled=(scaler is not None)):
             (
                 recon_image,
-                restored_feature,
-                pred_noise,
-                noisy_feature,
-                feature,
-                mask,
-                CBR,
-                SNR,
-                chan_param,
+                [restored_feature, pred_noise, noisy_feature, feature],
+                [mask, feature_H, feature_W],
+                [CBR, SNR, chan_param],
                 [mse, psnr, ssim, msssim],
                 img_loss,
             ) = net(input, valid)
@@ -277,6 +262,13 @@ def train_one_epoch_denoiser(
                 (feature + pred_noise).detach(),
                 mask,
             )
+            # restored_twice, pred_noise_twice = model.feature_denoiser(
+            #     (feature + pred_noise).detach(),
+            #     mask,
+            #     SNR,
+            #     feature_H,
+            #     feature_W,
+            # )
             self_loss = model.feature_mse_loss(
                 restored_twice, feature, mask, pred_noise
             )

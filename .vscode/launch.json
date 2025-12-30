@@ -20,12 +20,12 @@
                 "--channel-type", "awgn",
                 "--C", "32,64,96,128,192",
                 "--multiple-snr", "1,4,7,10,13",
-                "--model_size", "large",
+                "--model_size", "base",
                 "--amp",
-                "--training",
-                // "--denoise-training",
-                // "--stage", "1",
-                // "--denoise",
+                // "--training",
+                "--denoise-training",
+                "--stage", "1",
+                "--denoise",
                 
             ],
 
