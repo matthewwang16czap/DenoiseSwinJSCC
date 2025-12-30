@@ -161,11 +161,9 @@ def get_loader(args, config, rank=None, world_size=None, num_workers=None):
     )
 
     # ------------------------ Test Loader -------------------------- #
-    test_batch = 1
-
     test_loader = DataLoader(
         dataset=test_dataset,
-        batch_size=test_batch,
+        batch_size=config.test_batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=False,

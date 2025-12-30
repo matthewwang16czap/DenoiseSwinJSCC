@@ -122,12 +122,13 @@ if __name__ == "__main__":
     config.device = ddp_env["device"]
     config.device_id = ddp_env["device_id"]
     # config.batch_size = config.batch_size // ddp_env["world_size"]
-    if ddp_env["world_size"] <= 3:
-        config.accum_steps = 1
-    elif ddp_env["world_size"] == 4:
-        config.accum_steps = 2
-    else:
-        config.accum_steps = 4
+    config.accum_steps = 1
+    # if ddp_env["world_size"] <= 3:
+    #     config.accum_steps = 1
+    # elif ddp_env["world_size"] == 4:
+    #     config.accum_steps = 2
+    # else:
+    #     config.accum_steps = 4
 
     base_seed = 42 + ddp_env["rank"]  # Different seed per GPU
     seed_torch(base_seed)

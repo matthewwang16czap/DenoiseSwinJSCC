@@ -18,8 +18,8 @@ class Config:
         self.plot_step = 10000
         self.filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.workdir = f"./history/{self.filename}"
-        self.homedir = "/home/matthewwang16czap/"
-        # self.homedir = "/home/gexin/"
+        # self.homedir = "/home/matthewwang16czap/"
+        self.homedir = "/home/gexin/"
         # self.homedir = "/public/home/sihanwang/"
         self.log = f"{self.workdir}/Log_{self.filename}.log"
         self.samples = f"{self.workdir}/samples"
@@ -32,7 +32,8 @@ class Config:
         # --- Training details ---
         self.normalize = False
         self.learning_rate = 1e-4
-        self.alpha_losses = [10, 10, 10, 1]
+        self.alpha_losses = [1, 1, 1, 1]
+        # self.alpha_losses = [1, 1, 1, 1/(255.0**2)]
         self.tot_epoch = 10_000_000
 
         # --- Model toggles ---
@@ -64,8 +65,6 @@ class Config:
             f"{base_path}/DIV2K_train_HR",
             f"{base_path}/DIV2K_valid_HR",
         ]
-        self.batch_size = 16
-        self.downsample = 4  # number of downsampling layers in encoder
 
         # Testset options
         testset_map = {
@@ -81,10 +80,30 @@ class Config:
         else:
             self.channel_number = None
 
+        self.batch_size = 8
+        self.test_batch_size = 1
+        self.downsample = 4  # number of downsampling layers in encoder
+        self.patch_size = 2
+        self.in_chans = 3
+        self.window_size = 8
+        self.mlp_ratio = 4.0
+
         size_map = {
-            "small": dict(depths=[2, 2, 2, 2], num_heads=[4, 6, 8, 10]),
-            "base": dict(depths=[2, 2, 6, 2], num_heads=[4, 6, 8, 10]),
-            "large": dict(depths=[2, 2, 18, 2], num_heads=[4, 6, 8, 10]),
+            "small": dict(
+                depths=[2, 2, 2, 2],
+                num_heads=[4, 6, 8, 10],
+                embed_dims=[128, 192, 256, 320],
+            ),
+            "base": dict(
+                depths=[2, 2, 6, 2],
+                num_heads=[4, 6, 8, 10],
+                embed_dims=[128, 192, 256, 320],
+            ),
+            "large": dict(
+                depths=[2, 2, 18, 2],
+                num_heads=[4, 6, 8, 10],
+                embed_dims=[128, 192, 256, 320],
+            ),
         }
 
         if args.model_size not in size_map:
@@ -92,14 +111,14 @@ class Config:
 
         self.encoder_kwargs = dict(
             model=args.model,
-            patch_size=2,
-            in_chans=3,
-            embed_dims=[128, 192, 256, 320],
+            patch_size=self.patch_size,
+            in_chans=self.in_chans,
+            embed_dims=size_map[args.model_size]["embed_dims"],
             depths=size_map[args.model_size]["depths"],
             num_heads=size_map[args.model_size]["num_heads"],
             C=self.channel_number,
-            window_size=8,
-            mlp_ratio=4.0,
+            window_size=self.window_size,
+            mlp_ratio=self.mlp_ratio,
             qkv_bias=True,
             qk_scale=None,
             norm_layer=nn.LayerNorm,
@@ -108,14 +127,14 @@ class Config:
 
         self.decoder_kwargs = dict(
             model=args.model,
-            patch_size=2,
-            out_chans=3,
-            embed_dims=[320, 256, 192, 128],
+            patch_size=self.patch_size,
+            out_chans=self.in_chans,
+            embed_dims=size_map[args.model_size]["embed_dims"][::-1],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],
             C=self.channel_number,
-            window_size=8,
-            mlp_ratio=4.0,
+            window_size=self.window_size,
+            mlp_ratio=self.mlp_ratio,
             qkv_bias=True,
             qk_scale=None,
             norm_layer=nn.LayerNorm,
@@ -128,18 +147,18 @@ class Config:
         base_path = self.homedir + "datasets"
         self.train_data_dir = [
             f"{base_path}/coco-2014/train/data",
-            f"{base_path}/coco-2014/validation/data",
             f"{base_path}/coco-2017/train/data",
-            f"{base_path}/coco-2017/validation/data",
         ]
-        self.batch_size = 16
-        self.downsample = 4
 
         # Testset options
         testset_map = {
             "kodak": [self.homedir + "datasets/Kodak/"],
             "CLIC21": [self.homedir + "datasets/clic2021/test/"],
             "ffhq": [self.homedir + "datasets/ffhq/"],
+            "COCO": [
+                f"{base_path}/coco-2014/validation/data",
+                f"{base_path}/coco-2017/validation/data",
+            ],
         }
         self.test_data_dir = testset_map.get(args.testset, [])
 
@@ -149,16 +168,24 @@ class Config:
         else:
             self.channel_number = None
 
+        self.batch_size = 8
+        self.test_batch_size = 8
+        self.downsample = 4
+        self.patch_size = 4
+        self.in_chans = 3
+        self.window_size = 8
+        self.mlp_ratio = 4.0
+
         size_map = {
             "base": dict(
                 depths=[2, 2, 6, 2],
                 num_heads=[2, 4, 8, 16],
                 embed_dims=[64, 128, 256, 512],
             ),
-            "large": dict(
+            "baseline": dict(
                 depths=[2, 2, 6, 2],
-                num_heads=[3, 6, 12, 24],
-                embed_dims=[96, 192, 384, 768],
+                num_heads=[4, 6, 8, 10],
+                embed_dims=[128, 192, 256, 320],
             ),
         }
 
@@ -167,14 +194,14 @@ class Config:
 
         self.encoder_kwargs = dict(
             model=args.model,
-            patch_size=4,
-            in_chans=3,
+            patch_size=self.patch_size,
+            in_chans=self.in_chans,
             embed_dims=size_map[args.model_size]["embed_dims"],
             depths=size_map[args.model_size]["depths"],
             num_heads=size_map[args.model_size]["num_heads"],
             C=self.channel_number,
-            window_size=8,
-            mlp_ratio=4.0,
+            window_size=self.window_size,
+            mlp_ratio=self.mlp_ratio,
             qkv_bias=True,
             qk_scale=None,
             norm_layer=nn.LayerNorm,
@@ -183,14 +210,14 @@ class Config:
 
         self.decoder_kwargs = dict(
             model=args.model,
-            patch_size=4,
-            out_chans=3,
+            patch_size=self.patch_size,
+            out_chans=self.in_chans,
             embed_dims=size_map[args.model_size]["embed_dims"][::-1],
             depths=size_map[args.model_size]["depths"][::-1],
             num_heads=size_map[args.model_size]["num_heads"][::-1],
             C=self.channel_number,
-            window_size=8,
-            mlp_ratio=4.0,
+            window_size=self.window_size,
+            mlp_ratio=self.mlp_ratio,
             qkv_bias=True,
             qk_scale=None,
             norm_layer=nn.LayerNorm,
