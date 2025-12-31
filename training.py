@@ -259,8 +259,7 @@ def train_one_epoch_denoiser(
 
             # (3) Self-consistency: D(feature + pred_noise) ≈ feature
             restored_twice, pred_noise_twice = model.feature_denoiser(
-                (feature + pred_noise).detach(),
-                mask,
+                (feature + pred_noise).detach(), mask, SNR
             )
             # restored_twice, pred_noise_twice = model.feature_denoiser(
             #     (feature + pred_noise).detach(),
@@ -289,7 +288,7 @@ def train_one_epoch_denoiser(
 
         # ---------------------- Metric computation ---------------------- #
         metrics["elapsed"].update(time.time() - start_time)
-        metrics["losses"].update(img_loss.item())
+        metrics["losses"].update(total_loss.item())
         metrics["cbrs"].update(CBR)
         metrics["snrs"].update(SNR)
         metrics["psnrs"].update(psnr.item())

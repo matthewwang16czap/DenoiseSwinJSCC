@@ -148,7 +148,7 @@ if __name__ == "__main__":
     # model_path = "./checkpoints/fix_snr_fix_cbr_model.model"
     model_path = "./checkpoints/base_nonoise_step2.model"
     # model_path = "./checkpoints/full.model"
-    # load_weights(net, model_path)
+    load_weights(net, model_path)
 
     # --- Freeze params ---
     if args.denoise_training:

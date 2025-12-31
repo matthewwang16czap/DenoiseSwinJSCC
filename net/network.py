@@ -47,6 +47,8 @@ class SwinJSCC(nn.Module):
         self.feature_denoiser = (
             Attractor(
                 channels=encoder_kwargs["embed_dims"][-1],
+                in_depth=3,
+                out_depth=3,
             )
             if args.denoise
             else None
@@ -101,7 +103,7 @@ class SwinJSCC(nn.Module):
         # --- Pass noisy feature through feature_denoiser network ---
         if self.feature_denoiser:
             restored_feature, pred_noise = self.feature_denoiser(
-                noisy_feature, mask
+                noisy_feature, mask, SNR
             )  # predict noise
             # restored_feature, pred_noise = self.feature_denoiser(
             #     noisy_feature, mask, SNR, feature_H, feature_W

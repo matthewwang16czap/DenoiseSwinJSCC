@@ -18,8 +18,8 @@ class Config:
         self.plot_step = 10000
         self.filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.workdir = f"./history/{self.filename}"
-        self.homedir = "/home/matthewwang16czap/"
-        # self.homedir = "/home/gexin/"
+        # self.homedir = "/home/matthewwang16czap/"
+        self.homedir = "/home/gexin/"
         # self.homedir = "/public/home/sihanwang/"
         self.log = f"{self.workdir}/Log_{self.filename}.log"
         self.samples = f"{self.workdir}/samples"
