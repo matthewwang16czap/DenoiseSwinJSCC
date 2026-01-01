@@ -12,6 +12,7 @@ from torchmetrics.image import (
 )
 from net.unet2d import UNet2D
 from net.attractor import Attractor
+from utils import sample_choice_ddp
 
 
 class SwinJSCC(nn.Module):
@@ -70,14 +71,14 @@ class SwinJSCC(nn.Module):
 
     def forward(self, input_image, valid, given_SNR=None, given_rate=None):
         if given_SNR is None:
-            SNR = choice(self.multiple_snr)
+            SNR = sample_choice_ddp(self.multiple_snr, input_image.device)
             chan_param = SNR
         else:
             SNR = given_SNR
             chan_param = given_SNR
 
         if given_rate is None:
-            channel_number = choice(self.channel_number)
+            channel_number = sample_choice_ddp(self.channel_number, input_image.device)
         else:
             channel_number = given_rate
 

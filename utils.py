@@ -35,6 +35,20 @@ def is_main_process():
     return not dist.is_initialized() or dist.get_rank() == 0
 
 
+def sample_choice_ddp(choices, device):
+    if not dist.is_initialized():
+        return random.choice(choices)
+
+    if dist.get_rank() == 0:
+        choice = random.choice(choices)
+        choice_tensor = torch.tensor([choice], device=device)
+    else:
+        choice_tensor = torch.zeros(1, device=device)
+
+    dist.broadcast(choice_tensor, src=0)
+    return int(choice_tensor.item())
+
+
 def logger_configuration(config, save_log=False, test_mode=False):
     logger = logging.getLogger("Deep joint source channel coder")
 

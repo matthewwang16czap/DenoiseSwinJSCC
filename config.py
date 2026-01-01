@@ -8,7 +8,7 @@ class Config:
     def __init__(self, args):
         # --- Base setup ---
         self.seed = 42
-        self.pass_channel = True
+        self.pass_channel = False
         self.CUDA = torch.cuda.is_available()
         self.device = torch.device("cuda:0" if self.CUDA else "cpu")
         self.norm = False
@@ -54,16 +54,19 @@ class Config:
             raise ValueError(f"Unsupported trainset: {args.trainset}")
 
     def _setup_div2k(self, args):
-        self.save_model_freq = 100
+        # self.save_model_freq = 100
+        self.save_model_freq = 1
         self.image_dims = (3, 256, 256)
         base_path = self.homedir + "datasets/DIV2K"
         self.train_data_dir = [
-            f"{base_path}/clic2020/**",
-            f"{base_path}/clic2021/train",
-            f"{base_path}/clic2021/valid",
-            f"{base_path}/clic2022/val",
-            f"{base_path}/DIV2K_train_HR",
-            f"{base_path}/DIV2K_valid_HR",
+            # f"{base_path}/clic2020/**",
+            # f"{base_path}/clic2021/train",
+            # f"{base_path}/clic2021/valid",
+            # f"{base_path}/clic2022/val",
+            # f"{base_path}/DIV2K_train_HR",
+            # f"{base_path}/DIV2K_valid_HR",
+            self.homedir + "datasets/coco-2014/train/data",
+            self.homedir + "datasets/coco-2017/train/data",
         ]
 
         # Testset options
@@ -71,6 +74,10 @@ class Config:
             "kodak": [self.homedir + "datasets/Kodak/"],
             "CLIC21": [self.homedir + "datasets/clic2021/test/"],
             "ffhq": [self.homedir + "datasets/ffhq/"],
+            "COCO": [
+                self.homedir + "datasets/coco-2014/validation/data",
+                self.homedir + "datasets/coco-2017/validation/data",
+            ],
         }
         self.test_data_dir = testset_map.get(args.testset, [])
 
