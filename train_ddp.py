@@ -146,9 +146,9 @@ if __name__ == "__main__":
 
     # model_path = "./checkpoints/pretrained_EP12500.model"
     # model_path = "./checkpoints/fix_snr_fix_cbr_model.model"
-    # model_path = "./checkpoints/base_nonoise_step2.model"
+    model_path = "./checkpoints/base_nonoise_COCO_step1.model"
     # model_path = "./checkpoints/full.model"
-    # load_weights(net, model_path)
+    load_weights(net, model_path)
 
     # --- Freeze params ---
     if args.denoise_training:
@@ -186,7 +186,7 @@ if __name__ == "__main__":
     model = net.module if is_ddp else net
 
     # --- Data ---
-    train_loader, test_loader, train_sampler = get_loader(
+    train_loader, test_loader, train_sampler, test_sampler = get_loader(
         args, config, rank=ddp_env["rank"], world_size=ddp_env["world_size"]
     )
 
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     #     else config.learning_rate
     # )
     lr = config.learning_rate
-    model_params = [{"params": net.parameters(), "lr": lr}]
+    model_params = [{"params": model.parameters(), "lr": lr}]
     optimizer = optim.Adam(model_params, lr=lr)
 
     scaler = torch.amp.GradScaler() if args.amp else None
@@ -223,6 +223,8 @@ if __name__ == "__main__":
 
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
+            if test_sampler is not None:
+                test_sampler.set_epoch(epoch)
             if args.training:
                 global_step = train_one_epoch(
                     epoch,
@@ -261,16 +263,24 @@ if __name__ == "__main__":
                         scaler,
                     )
 
+            if dist.is_initialized():
+                dist.barrier()
+
             # Save/check only on rank 0
-            if (epoch + 1) % config.save_model_freq == 0 and ddp_env["rank"] == 0:
-                save_model(
-                    net.module if isinstance(net, DDP) else net,
-                    save_path=f"{config.models}/{config.filename}_EP{epoch+1}.model",
-                )
+            if (epoch + 1) % config.save_model_freq == 0:
+                if ddp_env["rank"] == 0:
+                    save_model(
+                        net.module if isinstance(net, DDP) else net,
+                        save_path=f"{config.models}/{config.filename}_EP{epoch+1}.model",
+                    )
                 test(
                     net.module if isinstance(net, DDP) else net,
                     test_loader,
-                    logger,
+                    (
+                        logger
+                        if (not isinstance(net, DDP)) or (ddp_env["rank"] == 0)
+                        else None
+                    ),
                     args,
                     config,
                 )
@@ -278,7 +288,7 @@ if __name__ == "__main__":
         test(
             net.module if isinstance(net, DDP) else net,
             test_loader,
-            logger,
+            (logger if (not isinstance(net, DDP)) or (ddp_env["rank"] == 0) else None),
             args,
             config,
         )

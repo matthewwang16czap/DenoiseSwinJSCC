@@ -111,9 +111,11 @@ def test(net, test_loader, logger, args, config):
     config.isTrain = False
     net.eval()
 
+    rank = dist.get_rank() if dist.is_initialized() else 0
+    world_size = dist.get_world_size() if dist.is_initialized() else 1
+
     # --- define metrics in a dict ---
     metric_names = [
-        "elapsed",
         "psnrs",
         "ssims",
         "msssims",
@@ -121,7 +123,9 @@ def test(net, test_loader, logger, args, config):
         "chan_params",
         "cbrs",
     ]
-    metrics = {name: AverageMeter() for name in metric_names}
+
+    metrics = {name: 0.0 for name in metric_names}
+    counts = 0  # for averaging
 
     multiple_snr = [int(x) for x in args.multiple_snr.split(",")]
     channel_number = [int(x) for x in args.C.split(",")]
@@ -137,9 +141,6 @@ def test(net, test_loader, logger, args, config):
         for j, rate in enumerate(channel_number):
             with torch.no_grad():
                 for batch_idx, data in enumerate(test_loader):
-
-                    start_time = time.time()
-
                     input, valid = data
 
                     if i == 0 and j == 0:
@@ -159,39 +160,50 @@ def test(net, test_loader, logger, args, config):
                     ) = net(input, valid, SNR, rate)
 
                     # --- save recon images ---
-                    save_path = get_path(
-                        ".", "recons", f"recon_{batch_idx}_{SNR}_{rate}.png"
-                    )
-                    torchvision.utils.save_image(recon_image[0], save_path)
+                    if rank == 0:
+                        save_path = get_path(
+                            ".", "recons", f"recon_{batch_idx}_{SNR}_{rate}.png"
+                        )
+                        torchvision.utils.save_image(recon_image[0], save_path)
 
                     # --- update metrics ---
-                    metrics["elapsed"].update(time.time() - start_time)
-                    metrics["cbrs"].update(CBR)
-                    metrics["snrs"].update(SNR)
-                    metrics["psnrs"].update(psnr.item())
-                    metrics["ssims"].update(ssim.item())
-                    metrics["msssims"].update(msssim.item())
-                    metrics["chan_params"].update(chan_param)
+                    metrics["psnrs"] += psnr.item() * input.size(0)
+                    metrics["ssims"] += ssim.item() * input.size(0)
+                    metrics["msssims"] += msssim.item() * input.size(0)
+                    metrics["cbrs"] += CBR * input.size(0)
+                    metrics["snrs"] += SNR * input.size(0)
+                    metrics["chan_params"] += chan_param * input.size(0)
+                    counts += input.size(0)
+
+            # --- DDP: reduce metrics across ranks ---
+            for key in metrics:
+                tensor = torch.tensor(metrics[key], device=config.device)
+                if dist.is_initialized():
+                    dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+                metrics[key] = (tensor / (counts * world_size)).item()  # global average
 
             # --- store results ---
-            results_snr[i, j] = metrics["snrs"].avg
-            results_chan_param[i, j] = metrics["chan_params"].avg
-            results_cbr[i, j] = metrics["cbrs"].avg
-            results_psnr[i, j] = metrics["psnrs"].avg
-            results_ssim[i, j] = metrics["ssims"].avg
-            results_msssim[i, j] = metrics["msssims"].avg
+            results_snr[i, j] = metrics["snrs"]
+            results_chan_param[i, j] = metrics["chan_params"]
+            results_cbr[i, j] = metrics["cbrs"]
+            results_psnr[i, j] = metrics["psnrs"]
+            results_ssim[i, j] = metrics["ssims"]
+            results_msssim[i, j] = metrics["msssims"]
             # --- clear all metric meters ---
-            for m in metrics.values():
-                m.clear()
+            # At the end of the inner loop
+            for key in metrics:
+                metrics[key] = 0.0
+            counts = 0
 
-    logger.info("Start Test:")
-    logger.info(f"SNR: {results_snr.round(1).tolist()}")
-    logger.info(f"SNR (denoised): {results_chan_param.round(2).tolist()}")
-    logger.info(f"CBR: {results_cbr.round(4).tolist()}")
-    logger.info(f"PSNR: {results_psnr.round(3).tolist()}")
-    logger.info(f"SSIM: {results_ssim.round(3).tolist()}")
-    logger.info(f"MS-SSIM: {results_msssim.round(3).tolist()}")
-    logger.info("Finish Test!")
+    if rank == 0 and logger is not None:
+        logger.info("Start Test:")
+        logger.info(f"SNR: {results_snr.round(1).tolist()}")
+        logger.info(f"SNR (denoised): {results_chan_param.round(2).tolist()}")
+        logger.info(f"CBR: {results_cbr.round(4).tolist()}")
+        logger.info(f"PSNR: {results_psnr.round(3).tolist()}")
+        logger.info(f"SSIM: {results_ssim.round(3).tolist()}")
+        logger.info(f"MS-SSIM: {results_msssim.round(3).tolist()}")
+        logger.info("Finish Test!")
 
 
 def train_one_epoch_denoiser(

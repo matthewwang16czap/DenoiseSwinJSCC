@@ -12,7 +12,7 @@ from data.letterbox import LetterBox
 
 
 class LetterboxImageDataset(Dataset):
-    def __init__(self, dirs, image_dims):
+    def __init__(self, dirs, image_dims, max_samples=None):
         """
         dirs: paths to images
         image_dims: (C, H, W)
@@ -22,6 +22,10 @@ class LetterboxImageDataset(Dataset):
             self.paths += glob(os.path.join(d, "*.png"))
             self.paths += glob(os.path.join(d, "*.jpg"))
         self.paths.sort()
+
+        if max_samples is not None:
+            self.paths = self.paths[:max_samples]
+
         assert len(self.paths) > 0, f"No images found in {dirs}"
 
         C, H, W = image_dims
@@ -60,7 +64,7 @@ class LetterboxImageDataset(Dataset):
 
 
 class RandomResizedCropImageDataset(Dataset):
-    def __init__(self, dirs, image_dims, train):
+    def __init__(self, dirs, image_dims, train, max_samples=None):
         """
         dirs: a list of directories
         image_dims: (C,H,W)
@@ -71,6 +75,9 @@ class RandomResizedCropImageDataset(Dataset):
             self.paths += glob(os.path.join(d, "*.png"))
             self.paths += glob(os.path.join(d, "*.jpg"))
         self.paths.sort()
+
+        if max_samples is not None:
+            self.paths = self.paths[:max_samples]
 
         _, H, W = image_dims
 
@@ -113,9 +120,16 @@ def get_dataset(name, data_dirs, config, train):
     """
     name = name.upper()
     if config.dataset_type.lower() == "letterbox":
-        return LetterboxImageDataset(dirs=data_dirs, image_dims=config.image_dims)
+        return LetterboxImageDataset(
+            dirs=data_dirs,
+            image_dims=config.image_dims,
+            max_samples=config.max_test_samples if not train else None,
+        )
     return RandomResizedCropImageDataset(
-        dirs=data_dirs, image_dims=config.image_dims, train=train
+        dirs=data_dirs,
+        image_dims=config.image_dims,
+        train=train,
+        max_samples=config.max_test_samples if not train else None,
     )
 
 
@@ -137,10 +151,19 @@ def get_loader(args, config, rank=None, world_size=None, num_workers=None):
             num_replicas=world_size,
             rank=rank,
             shuffle=True,
+            drop_last=True,
+        )
+        test_sampler = DistributedSampler(
+            test_dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=False,
+            drop_last=False,
         )
         shuffle = False
     else:
         train_sampler = None
+        test_sampler = None
         shuffle = True
 
     if num_workers is None:
@@ -155,7 +178,6 @@ def get_loader(args, config, rank=None, world_size=None, num_workers=None):
         num_workers=num_workers,
         pin_memory=False,
         worker_init_fn=worker_init_fn_seed,
-        drop_last=True,
         persistent_workers=False,
         prefetch_factor=2,
     )
@@ -165,9 +187,10 @@ def get_loader(args, config, rank=None, world_size=None, num_workers=None):
         dataset=test_dataset,
         batch_size=config.test_batch_size,
         shuffle=False,
+        sampler=test_sampler,
         num_workers=num_workers,
         pin_memory=False,
         prefetch_factor=2,
     )
 
-    return train_loader, test_loader, train_sampler
+    return train_loader, test_loader, train_sampler, test_sampler

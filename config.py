@@ -46,6 +46,7 @@ class Config:
     def _setup_dataset(self, args):
         """Configure dataset and model-specific parameters."""
         self.dataset_type = "RandomResizedCrop"  # or "LetterBox"
+        self.max_test_samples = 100
         if args.trainset == "DIV2K":
             self._setup_div2k(args)
         elif args.trainset == "COCO":
