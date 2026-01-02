@@ -74,13 +74,13 @@ class SwinJSCC(nn.Module):
             SNR = sample_choice_ddp(self.multiple_snr, input_image.device)
             chan_param = SNR
         else:
-            SNR = given_SNR
-            chan_param = given_SNR
+            SNR = torch.tensor([given_SNR], device=input_image.device)
+            chan_param = SNR
 
         if given_rate is None:
             channel_number = sample_choice_ddp(self.channel_number, input_image.device)
         else:
-            channel_number = given_rate
+            channel_number = torch.tensor([given_rate], device=input_image.device)
 
         feature, mask, feature_H, feature_W = self.encoder(
             input_image, chan_param, channel_number, self.model
@@ -94,7 +94,7 @@ class SwinJSCC(nn.Module):
 
         elif self.model == "SwinJSCC_w/_RA" or self.model == "SwinJSCC_w/_SAandRA":
             CBR = channel_number / (2 * 3 * 2 ** (self.downsample * 2))
-            avg_pwr = torch.sum(feature**2) / mask.sum()
+            avg_pwr = torch.sum(feature**2) / mask.sum().clamp(min=1e-8)
             if self.pass_channel:
                 noisy_feature = self.feature_pass_channel(feature, chan_param, avg_pwr)
             else:
@@ -110,7 +110,9 @@ class SwinJSCC(nn.Module):
             #     noisy_feature, mask, SNR, feature_H, feature_W
             # )  # predict noise
             # repredict chan_param
-            signal_power = (((feature * mask) ** 2).sum() / mask.sum()).detach()
+            signal_power = (
+                ((feature * mask) ** 2).sum() / mask.sum().clamp(min=1e-8)
+            ).detach()
             restore_mse = self.feature_mse_loss(
                 restored_feature, feature, mask
             ).detach()

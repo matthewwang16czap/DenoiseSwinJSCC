@@ -46,7 +46,7 @@ def sample_choice_ddp(choices, device):
         choice_tensor = torch.zeros(1, device=device)
 
     dist.broadcast(choice_tensor, src=0)
-    return int(choice_tensor.item())
+    return choice_tensor
 
 
 def logger_configuration(config, save_log=False, test_mode=False):

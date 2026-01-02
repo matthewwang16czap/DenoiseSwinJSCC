@@ -200,8 +200,8 @@ class SwinJSCC_Encoder(nn.Module):
             x = self.head_list(x)
 
         # Condition tensors
-        snr_batch = torch.full((B, 1), snr, device=device)
-        rate_batch = torch.full((B, 1), rate, device=device)
+        snr_batch = snr.unsqueeze(0).repeat(B, 1)
+        rate_batch = rate.unsqueeze(0).repeat(B, 1)
 
         mask = torch.ones(x.size(), device=device)
 

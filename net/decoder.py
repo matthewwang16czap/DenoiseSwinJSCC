@@ -160,7 +160,7 @@ class SwinJSCC_Decoder(nn.Module):
         B, L, C = x.shape
         device = x.device
 
-        snr_batch = torch.full((B, 1), snr, device=device)
+        snr_batch = snr.unsqueeze(0).repeat(B, 1)
 
         temp = None
         for i in range(self.adaptive_layer_num):
