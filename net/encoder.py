@@ -170,7 +170,7 @@ class SwinJSCC_Encoder(nn.Module):
 
         mask_vals = mod_val.sum(dim=1)  # (B, C)
         sorted, idx = mask_vals.sort(dim=1, descending=True)  # top-k
-        topk = idx[:, :rate]  # (B, rate)
+        topk = idx[:, : rate.int().item()]  # (B, rate)
 
         # flatten index trick
         add = torch.arange(0, B * C, C, device=device).unsqueeze(1).int()

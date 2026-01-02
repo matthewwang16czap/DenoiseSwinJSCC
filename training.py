@@ -164,7 +164,9 @@ def test(net, test_loader, logger, args, config):
                     # --- save recon images ---
                     if rank == 0:
                         save_path = get_path(
-                            ".", "recons", f"recon_{rank}_{batch_idx}_{SNR}_{rate}.png"
+                            ".",
+                            "recons",
+                            f"recon_{rank}_{batch_idx}_{SNR.item()}_{rate.item()}.png",
                         )
                         torchvision.utils.save_image(recon_image[0], save_path)
 
