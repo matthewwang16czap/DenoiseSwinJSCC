@@ -71,6 +71,7 @@ class SwinJSCC(nn.Module):
 
     def forward(self, input_image, valid, given_SNR=None, given_rate=None):
         if given_SNR is None:
+            # SNR = choice(self.multiple_snr)
             SNR = sample_choice_ddp(self.multiple_snr, input_image.device)
             chan_param = SNR
         else:
@@ -78,6 +79,7 @@ class SwinJSCC(nn.Module):
             chan_param = SNR
 
         if given_rate is None:
+            # channel_number = choice(self.channel_number)
             channel_number = sample_choice_ddp(self.channel_number, input_image.device)
         else:
             channel_number = torch.tensor([given_rate], device=input_image.device)
@@ -93,8 +95,11 @@ class SwinJSCC(nn.Module):
                 noisy_feature = feature
 
         elif self.model == "SwinJSCC_w/_RA" or self.model == "SwinJSCC_w/_SAandRA":
-            CBR = channel_number / (2 * 3 * 2 ** (self.downsample * 2))
-            avg_pwr = torch.sum(feature**2) / mask.sum().clamp(min=1e-8)
+            CBR = channel_number.float() / (2 * 3 * 2 ** (self.downsample * 2))
+            with torch.amp.autocast(device_type="cuda", enabled=False):
+                avg_pwr = (feature.float().pow(2).sum()) / mask.float().sum().clamp(
+                    min=1e-6
+                )
             if self.pass_channel:
                 noisy_feature = self.feature_pass_channel(feature, chan_param, avg_pwr)
             else:
@@ -110,13 +115,22 @@ class SwinJSCC(nn.Module):
             #     noisy_feature, mask, SNR, feature_H, feature_W
             # )  # predict noise
             # repredict chan_param
-            signal_power = (
-                ((feature * mask) ** 2).sum() / mask.sum().clamp(min=1e-8)
-            ).detach()
-            restore_mse = self.feature_mse_loss(
-                restored_feature, feature, mask
-            ).detach()
-            chan_param = 10 * torch.log10(signal_power / (restore_mse + 1e-8))
+            with torch.amp.autocast(device_type="cuda", enabled=False):
+                # ---- signal power ----
+                signal_power = (feature.float() * mask.float()).pow(
+                    2
+                ).sum() / mask.float().sum().clamp(min=1e-6)
+
+                # ---- restore MSE ----
+                restore_mse = self.feature_mse_loss(
+                    restored_feature.float(),
+                    feature.float(),
+                    mask.float(),
+                )
+
+                # ---- SNR recomputation (log10 in fp32 only) ----
+                ratio = signal_power / restore_mse.clamp(min=1e-8)
+                chan_param = 10.0 * torch.log10(ratio).detach()
         else:
             pred_noise = torch.zeros_like(noisy_feature)
             restored_feature = noisy_feature
