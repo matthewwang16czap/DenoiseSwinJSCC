@@ -153,7 +153,11 @@ class SwinJSCC(nn.Module):
             recon_image,
             [restored_feature, pred_noise, noisy_feature, feature],
             [mask, feature_H, feature_W],
-            [CBR, SNR, chan_param],
+            [
+                CBR.item() if isinstance(CBR, torch.Tensor) else CBR,
+                SNR.item() if isinstance(SNR, torch.Tensor) else SNR,
+                chan_param,
+            ],
             [mse, psnr, ssim, msssim],
             img_loss,
         )

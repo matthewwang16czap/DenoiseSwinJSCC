@@ -67,8 +67,8 @@ def train_one_epoch(
         # Update metrics
         metrics["elapsed"].update(time.time() - start_time)
         metrics["losses"].update(img_loss.item())
-        metrics["cbrs"].update(CBR.item())
-        metrics["snrs"].update(SNR.item())
+        metrics["cbrs"].update(CBR)
+        metrics["snrs"].update(SNR)
         metrics["psnrs"].update(psnr.item())
         metrics["ssims"].update(ssim.item())
         metrics["msssims"].update(msssim.item())
@@ -166,7 +166,7 @@ def test(net, test_loader, logger, args, config):
                         save_path = get_path(
                             ".",
                             "recons",
-                            f"recon_{rank}_{batch_idx}_{SNR.item()}_{rate.item()}.png",
+                            f"recon_{rank}_{batch_idx}_{SNR}_{rate}.png",
                         )
                         torchvision.utils.save_image(recon_image[0], save_path)
 
@@ -174,7 +174,7 @@ def test(net, test_loader, logger, args, config):
                     metrics["psnrs"] += psnr.item() * input.size(0)
                     metrics["ssims"] += ssim.item() * input.size(0)
                     metrics["msssims"] += msssim.item() * input.size(0)
-                    metrics["cbrs"] += CBR.item() * input.size(0)
+                    metrics["cbrs"] += CBR * input.size(0)
                     metrics["snrs"] += SNR * input.size(0)
                     metrics["chan_params"] += chan_param * input.size(0)
                     counts += input.size(0)
@@ -305,8 +305,8 @@ def train_one_epoch_denoiser(
         # ---------------------- Metric computation ---------------------- #
         metrics["elapsed"].update(time.time() - start_time)
         metrics["losses"].update(total_loss.item())
-        metrics["cbrs"].update(CBR.item())
-        metrics["snrs"].update(SNR.item())
+        metrics["cbrs"].update(CBR)
+        metrics["snrs"].update(SNR)
         metrics["psnrs"].update(psnr.item())
         metrics["ssims"].update(ssim.item())
         metrics["msssims"].update(msssim.item())
